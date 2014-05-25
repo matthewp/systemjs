@@ -637,8 +637,12 @@ function formatCJS(loader) {
         glString += 'var ' + _g + ' = _g.' + _g + ';';
 
       load.source = glString + load.source;
-
-      loader.__exec(load);
+      var execLoad = {
+      	name: load.name,
+      	source: glString + load.source,
+      	address: load.address
+      };
+      loader.__exec(execLoad);
 
       loader.global._g = undefined;
 
