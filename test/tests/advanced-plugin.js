@@ -1,24 +1,20 @@
 
 exports.locate = function(load) {
-  return {
-    then: function(resolve, reject) {
-      setTimeout(function() {
-        resolve('custom fetch');
-      }, 20);      
-    }
-  };
+  return new Promise(function(resolve, reject) {
+    setTimeout(function() {
+      resolve('custom fetch');
+    }, 20);      
+  });
 }
 
 exports.fetch = function(load) {
-  return {
-    then: function(resolve, reject) {
-      setTimeout(function() {
-        resolve(load.address);
-      }, 20);
-    }
-  }
+  return new Promise(function(resolve, reject) {
+    setTimeout(function() {
+      resolve(load.address);
+    }, 20);    
+  });
 }
 
 exports.translate = function(load) {
-  return 'window.q = "' + load.source + ':' + load.name + '";';
+  load.source = '"deps ./plugin-dep"; (typeof window != "undefined" ? window : global).q = "' + load.source + ':' + load.name + '";';
 }

@@ -1,6 +1,6 @@
 {
   "name": "systemjs",
-  "version": "0.5.5",
+  "version": "0.6.6",
   "description": "System loader extension for flexible AMD & CommonJS support",
   "main": "dist/system.js",
   "repository": {
@@ -10,10 +10,13 @@
   "author": "Guy Bedford",
   "license": "MIT",
   "dependencies": {
-    "bower": "1.2.8",
-    "es6-module-loader": "~0.5.4"
+    "es6-module-loader": "~0.6.1"
+  },
+  "devDependencies": {
+    "qunit": "^0.6.2",
+    "uglify-js": "~2.4.13"
   },
   "scripts": {
-    "install": "node node_modules/bower/bin/bower install"
+    "test": "qunit -c s:./dist/system.js -t ./test/test.js"
   }
 }

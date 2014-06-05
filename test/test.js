@@ -1,16 +1,25 @@
+"format global";
+
 QUnit.config.testTimeout = 2000;
 
-module("SystemJS");
+QUnit.module("SystemJS");
+
+if (typeof window == 'undefined') {
+  System.baseURL = 'test';
+}
 
 function err(e) {
   setTimeout(function() {
-    throw e;
+    if (typeof window == 'undefined')
+      console.log(e.stack);
+    else
+      throw e;
     start();
   });  
 }
 
 asyncTest('Error handling', function() {
-  System['import']('tests/error').then(err, function() {
+  System['import']('tests/error').then(err, function(e) {
     ok(true);
     start();
   });
@@ -18,7 +27,7 @@ asyncTest('Error handling', function() {
 
 asyncTest('Global script loading', function() {
   System['import']('tests/global').then(function(m) {
-    ok(m.jQuery && m.another, 'Global objects not defined');
+    ok(m.jjQuery && m.another, 'Global objects not defined');
     start();
   }, err);
 });
@@ -48,6 +57,21 @@ asyncTest('Global script with shim config', function() {
   System.meta['tests/global-shim-config'] = { deps: ['./global-shim-config-dep'] };
   System['import']('tests/global-shim-config').then(function(m) {
     ok(m == 'shimmed', 'Not shimmed');
+    start();
+  }, err);
+});
+
+asyncTest('Global script with inaccessible properties', function() {
+  Object.defineProperty(System.global, 'errorOnAccess', {
+    configurable: true,
+    enumerable: true,
+    get: function() { throw Error('This property is inaccessible'); },
+  });
+
+  System['import']('tests/global-inaccessible-props').then(function(m) {
+    ok(m == 'result of global-inaccessible-props', 'Failed due to a inaccessible property');
+
+    delete System.global.errorOnAccess;
     start();
   }, err);
 });
@@ -124,6 +148,19 @@ asyncTest('Contextual map with shim', function() {
   }, err);
 });
 
+asyncTest('Prefetching', function() {
+  throws(System['import']('tests/prefetch'));
+  start();
+});
+
+asyncTest('Package loading shorthand', function() {
+  System.map['tests/package'] = 'tests/some-package';
+  System['import']('tests/package/').then(function(m) {
+    ok(m.isPackage);
+    start();
+  }, err);
+});
+
 asyncTest('Loading an AMD module', function() {
   System['import']('tests/amd-module').then(function(m) {
     ok(m.amd == true, 'Incorrect module');
@@ -131,6 +168,35 @@ asyncTest('Loading an AMD module', function() {
     start();
   }, err);
 });
+
+System.bundles['tests/amd-bundle'] = ['bundle-1', 'bundle-2'];
+asyncTest('Loading an AMD bundle', function() {
+  System['import']('bundle-1').then(function(m) {
+    ok(m.defined == true);
+    start();
+  }, err);
+
+  stop();
+  System['import']('bundle-2').then(function(m) {
+    ok(m.defined == true);
+    start();
+  }, err);
+});
+
+System.bundles['tests/amd-namespaced-bundle'] = ['bundle-ns-1', 'bundle-ns-2'];
+asyncTest('Loading a namespaced AMD bundle', function() {
+  System['import']('bundle-ns-1').then(function(m) {
+    ok(m.defined == true);
+    start();
+  }, err);
+
+  stop();
+  System['import']('bundle-ns-2').then(function(m) {
+    ok(m.defined == true);
+    start();
+  }, err);
+});
+
 /*
 asyncTest('Loading an AMD named define', function() {
   System['import']('tests/nameddefine').then(function(m1){
@@ -154,6 +220,13 @@ asyncTest('Loading a CommonJS module', function() {
   System['import']('tests/common-js-module').then(function(m) {
     ok(m.hello == 'world', 'module value not defined');
     ok(m.first == 'this is a dep', 'dep value not defined');
+    start();
+  }, err);
+});
+
+asyncTest('Loading a CommonJS module with this', function() {
+  System['import']('tests/cjs-this').then(function(m) {
+    ok(m.asdf == 'module value');
     start();
   }, err);
 });
@@ -187,6 +260,17 @@ asyncTest('Versions support', function() {
   }, err);
 });
 
+asyncTest('Version with map', function() {
+  System.versions['tests/mvd'] = '2.0.0';
+  System.map['tests/map-version'] = {
+    'tests/mvd': 'tests/mvd@^2.0.0'
+  };
+  System['import']('tests/map-version').then(function(m) {
+    ok(m == 'overridden map version');
+    start();
+  }, err);
+});
+
 asyncTest('Simple compiler Plugin', function() {
   System.map['coffee'] = 'tests/compiler-plugin';
   System['import']('tests/compiler-test.coffee!').then(function(m) {
@@ -215,13 +299,6 @@ asyncTest('Mapping a plugin argument', function() {
   }, err);
 });
 
-asyncTest('Legacy plugin', function() {
-  System['import']('tests/global.js!tests/legacy-plugin').then(function(m) {
-    expect(0);
-    start();
-  }, err);
-});
-
 asyncTest('Advanced compiler plugin', function() {
   System['import']('tests/compiler-test!tests/advanced-plugin').then(function(m) {
     ok(m == 'custom fetch:tests/compiler-test!tests/advanced-plugin', m);
@@ -229,13 +306,75 @@ asyncTest('Advanced compiler plugin', function() {
   }, err);
 });
 
-asyncTest('Loading from jspm', function() {
-  System.paths['npm:*'] = 'https://npm.jspm.io/*.js';
-  System['import']('npm:underscore').then(function(m) {
-    ok(m && typeof m.chain == 'function', 'Not loaded');
+asyncTest('AMD Circular', function() {
+  System['import']('tests/amd-circular1').then(function(m) {
+    ok(m.outFunc() == 5, 'Expected execution');
+    start();
+  })['catch'](err);
+});
+
+asyncTest('CJS Circular', function() {
+  System['import']('tests/cjs-circular1').then(function(m) {
+    ok(m.first == 'second value');
+    ok(m.firstWas == 'first value', 'Original value');
     start();
   }, err);
 });
+
+asyncTest('System.register Circular', function() {
+  System['import']('tests/register-circular1').then(function(m) {
+    ok(m.q == 3, 'Binding not allocated');
+    ok(m.r == 5, 'Binding not updated');
+    start();
+  }, err);
+});
+
+System.bundles['tests/mixed-bundle'] = ['tree/third', 'tree/cjs', 'tree/jquery', 'tree/second', 'tree/global', 'tree/amd', 'tree/first'];
+
+asyncTest('Loading AMD from a bundle', function() {
+  System['import']('tree/amd').then(function(m) {
+    ok(m.is == 'amd');
+    start();
+  }, err);
+});
+
+
+System.bundles['tests/mixed-bundle'] = ['tree/third', 'tree/cjs', 'tree/jquery', 'tree/second', 'tree/global', 'tree/amd', 'tree/first'];
+asyncTest('Loading CommonJS from a bundle', function() {
+  System['import']('tree/cjs').then(function(m) {
+    ok(m.cjs === true);
+    start();
+  }, err);
+});
+
+asyncTest('Loading a Global from a bundle', function() {
+  System['import']('tree/global').then(function(m) {
+    ok(m === 'output');
+    start();
+  }, err);
+});
+
+asyncTest('Loading named System.register', function() {
+  System['import']('tree/third').then(function(m) {
+    ok(m.some == 'exports');
+    start();
+  }, err);
+});
+asyncTest('Loading System.register from ES6', function() {
+  System['import']('tree/first').then(function(m) {
+    ok(m.p == 5);
+    start();
+  }, err);
+});
+
+//asyncTest('Loading from jspm', function() {
+//  System.paths['npm:*'] = 'https://npm.jspm.io/*.js';
+//  System['import']('npm:underscore').then(function(m) {
+//    ok(m && typeof m.chain == 'function', 'Not loaded');
+//    start();
+//  }, err);
+//});
+
 
 asyncTest('Wrapper module support', function() {
   System['import']('tests/wrapper').then(function(m) {
@@ -318,6 +457,29 @@ asyncTest('Relative dyanamic loading', function() {
       ok(m.dynamic == 'module', 'Dynamic load failed');
       start();
     }, err);
+  }, err);
+});
+
+asyncTest('ES6 Circular', function() {
+  System['import']('tests/es6-circular1').then(function(m) {
+    ok(m.q == 3, 'Binding not allocated');
+    ok(m.r == 5, 'Binding not updated');
+    start();
+  }, err);
+});
+
+asyncTest('AMD & CJS circular, ES6 Circular', function() {
+  System['import']('tests/all-circular1').then(function(m) {
+    ok(m.q == 4);
+    ok(m.o.checkObj() == 'changed');
+    start();
+  }, err);
+});
+
+asyncTest('AMD -> System.register circular -> ES6', function() {
+  System['import']('tests/all-layers1').then(function(m) {
+    ok(m == true)
+    start();
   }, err);
 });
 
@@ -453,3 +615,4 @@ asyncTest("plugin instantiate hook", function(){
 });
 
 QUnit.start();
+
