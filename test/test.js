@@ -197,7 +197,7 @@ asyncTest('Loading a namespaced AMD bundle', function() {
   }, err);
 });
 
-/*
+
 asyncTest('Loading an AMD named define', function() {
   System['import']('tests/nameddefine').then(function(m1){
     ok(m1.converter, 'Showdown not loaded');
@@ -207,7 +207,7 @@ asyncTest('Loading an AMD named define', function() {
     }, err);
   }, err);
 });
-*/
+
 
 asyncTest('Loading AMD CommonJS form', function() {
   System['import']('tests/amd-cjs-module').then(function(m) {
@@ -478,74 +478,32 @@ asyncTest('AMD & CJS circular, ES6 Circular', function() {
 
 asyncTest('AMD -> System.register circular -> ES6', function() {
   System['import']('tests/all-layers1').then(function(m) {
-    ok(m == true)
+    ok(m == true);
     start();
   }, err);
 });
 
-asyncTest("normalize hook", function(){
-	
-	System.format.normalized = {
-		detect: function(load){
-			return !!load.source.match(/getNormal\(/);
-		},
-		deps: function(load, global){
-			var deps;
-			global.getNormal = function(dep, factory){
-				deps = [dep];
-				load.metadata.factory = factory;
-			};
-			System.__exec(load);
-			console.log("deps", deps)
-			return deps;
-		},
-		execute: function(depNames, load){
-			var module = System.get( depNames[0] );
-			if (module.__useDefault) {
-		      module = module['default'];
-		    }
-			
-			return load.metadata.factory( module );
-		},
-		normalize: function(name, referer, refererAddress, baseNormalize){
-			var parts = name.split("/"),
-				last = ( parts.pop() || "");
-			return baseNormalize(parts.join("/")+"/normalized-"+last);
-		}
-	};
-	System.formats.unshift("normalized");
-	System['import']('tests/amd-cjs-module').then(function(m) {
-    ok(m.test == 'hi', 'Not defined');
-      start();
-    }, err);
-	
-	
-});
-
-
 asyncTest("System.meta", function(){
-	
-	System.meta = {
-		'tests/global-multi' : {
-			arbitraryMetaProperty: true,
-			exports: "jQuery"
-		}
-	};
-	var oldLocate = System.locate;
-	System.locate = function(load){
-      var res = oldLocate.apply(this, arguments);
-      if(load.name == "tests/global-multi") {
-        ok(load.metadata.arbitraryMetaProperty, "got arbitrary metadata");
-      }
-	  return res;
-	};
-	
-	
-	System.formats.unshift("normalized");
-	System['import']('tests/global-multi').then(function(m) {
-      ok(m.jquery === 'here', 'exports works right');
-      start();
-    }, err);
+  System.meta = {
+    'tests/global-multi' : {
+      arbitraryMetaProperty: true,
+      exports: "jjQuery"
+    }
+  };
+
+  var oldLocate = System.locate;
+  System.locate = function(load){
+    var res = oldLocate.apply(this, arguments);
+    if(load.name == "tests/global-multi") {
+      ok(load.metadata.arbitraryMetaProperty, "got arbitrary metadata");
+    }
+    return res;
+  };
+
+  System['import']('tests/global-multi').then(function(m) {
+    ok(m.jquery === 'here', 'exports works right');
+    start();
+  }, err);
 });
 
 /*
@@ -575,44 +533,41 @@ asyncTest("System.clone", function(){
 	
 });*/
 
+
 asyncTest("bundled defines without dependencies", function(){
-	System.bundles["tests/amd-bundle/amd-bundled"] = ["tests/amd-bundle",'amd-dependency'];
-	System['import']("tests/amd-bundle").then(function(value){
-		equal(value.name, "tests/amd-bundle","got the right module value");
-		console.log(value.dep);
-		start();
-	}, function(e){
-		ok(false, "got error "+e);
-		start();
-	});
+  System.bundles["tests/amd-bundle/amd-bundled"] = ["amd-bundle", "amd-dependency"];
+
+  System['import']("amd-bundle").then(function(m){
+    equal(m.name, "tests/amd-bundle","got the right module value");
+    start();
+  }, function(e){
+    ok(false, "got error "+e);
+    start();
+  });
 });
 
 asyncTest("plugin instantiate hook", function(){
-	var testEl = document.createElement("div");
-	testEl.id = "test-element";
-	
-	document.body.appendChild(testEl);
-	
-	var instantiate = System.instantiate;
-	System.instantiate = function(load){
-		if( load.name.indexOf( "tests/build_types/test.css") === 0 ) {
-			equal(load.metadata.buildType, "css", "buildType set");
-		}
-		
-		return instantiate.apply(this, arguments);
-	};
-	
-	System['import']("tests/build_types/test.css!tests/build_types/css").then(function(value){
-		equal(testEl.clientWidth, 200, "style added to the page");
-		document.body.removeChild(testEl);
-		System.instantiate = instantiate;
-		start();
-		
-	}, function(e){
-		ok(false, "got error "+e);
-		start();
-	});
+  var testEl = document.createElement("div");
+  testEl.id = "test-element";
+  document.body.appendChild(testEl);
+
+  var instantiate = System.instantiate;
+  System.instantiate = function(load){
+    if( load.name.indexOf( "tests/build_types/test.css") === 0 ) {
+      equal(load.metadata.buildType, "css", "buildType set");
+    }
+    return instantiate.apply(this, arguments);
+  };
+
+  System['import']("tests/build_types/test.css!tests/build_types/css").then(function(value){
+    equal(testEl.clientWidth, 200, "style added to the page");
+    document.body.removeChild(testEl);
+    System.instantiate = instantiate;
+    start();
+  }, function(e){
+    ok(false, "got error "+e);
+    start();
+  });
 });
 
 QUnit.start();
-

@@ -1517,6 +1517,7 @@ function plugins(loader) {
         load.metadata.plugin = plugin;
         load.metadata.pluginName = pluginName;
         load.metadata.pluginArgument = load.name;
+        load.metadata.buildType = plugin.buildType || "js";
 
         // run plugin locate if given
         if (plugin.locate)
@@ -1567,10 +1568,11 @@ function plugins(loader) {
     if (load.metadata.plugin && load.metadata.plugin.instantiate)
       return Promise.resolve(load.metadata.plugin.instantiate.call(loader, load)).then(function(result) {
         if (result) {
-          load.metadata.format = 'defined';
-          load.metadata.execute = function() {
-            return result;
-          };
+          // load.metadata.format = 'defined';
+          // load.metadata.execute = function() {
+          //   return result;
+          // };
+          return result;
         }
         return loaderInstantiate.call(loader, load);
       });
