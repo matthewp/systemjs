@@ -7,8 +7,14 @@
 
 (function(__$global) {
 
-__$global.upgradeSystemLoader = function() {
-  __$global.upgradeSystemLoader = undefined;
+var __upgradeSystemLoader = function(baseLoader) {
+
+  var extend = function(d, s){
+    for(var prop in s) {
+      d[prop] = s[prop];
+    }
+    return d;
+  };
 
   // indexOf polyfill for IE
   var indexOf = Array.prototype.indexOf || function(item) {
@@ -16,7 +22,7 @@ __$global.upgradeSystemLoader = function() {
       if (this[i] === item)
         return i;
     return -1;
-  }
+  };
 
   // Absolute URL parsing, from https://gist.github.com/Yaffle/1088850
   function parseURI(url) {
@@ -60,7 +66,7 @@ __$global.upgradeSystemLoader = function() {
   }
 
   // clone the original System loader
-  var originalSystem = __$global.System;
+  var originalSystem = baseLoader;
   var System = __$global.System = new LoaderPolyfill(originalSystem);
   System.baseURL = originalSystem.baseURL;
   System.paths = { '*': '*.js' };
@@ -69,7 +75,7 @@ __$global.upgradeSystemLoader = function() {
   System.noConflict = function() {
     __$global.SystemJS = System;
     __$global.System = System.originalSystem;
-  }
+  };
 
   /*
  * Script tag fetch
@@ -1852,6 +1858,8 @@ depCache(System);
         ? __$curScript.src.substr(0, __$curScript.src.lastIndexOf('/') + 1) 
         : System.baseURL + (System.baseURL.lastIndexOf('/') == System.baseURL.length - 1 ? '' : '/')
         ) + 'traceur.js';
+
+  return System;
 };
 
 function __eval(__source, __global, __address, __sourceMap) {
@@ -1873,6 +1881,15 @@ function __eval(__source, __global, __address, __sourceMap) {
 var __$curScript;
 
 (function(global) {
+  global.upgradeSystemLoader = function() {
+    global.upgradeSystemLoader = undefined;
+    var originalSystem = global.System;
+    global.System = __upgradeSystemLoader(global.System);
+    global.System.clone = function() {
+      return __upgradeSystemLoader(originalSystem);
+    };
+  };
+
   if (typeof window != 'undefined') {
     var scripts = document.getElementsByTagName('script');
     __$curScript = scripts[scripts.length - 1];
