@@ -7,14 +7,23 @@
 
 (function(__$global) {
 
-var __upgradeSystemLoader = function(baseLoader) {
-
   var extend = function(d, s){
     for(var prop in s) {
       d[prop] = s[prop];
     }
     return d;
   };
+
+  var cloneSystemLoader = function(System){
+    var Loader = __$global.Loader || __$global.LoaderPolyfill;
+    var loader = new Loader(System);
+    loader.baseURL = System.baseURL;
+    loader.paths = extend({}, System.paths);
+    loader.originalSystem = extend({}, System);
+    return loader;
+  };
+
+var __upgradeSystemLoader = function(baseLoader) {
 
   // indexOf polyfill for IE
   var indexOf = Array.prototype.indexOf || function(item) {
@@ -65,19 +74,13 @@ var __upgradeSystemLoader = function(baseLoader) {
       href.hash;
   }
 
-  // clone the original System loader
-  var originalSystem = baseLoader;
-  var System = __$global.System = new LoaderPolyfill(originalSystem);
-  System.baseURL = originalSystem.baseURL;
-  System.paths = { '*': '*.js' };
-  System.originalSystem = originalSystem;
+  var System = cloneSystemLoader(baseLoader);
 
   System.noConflict = function() {
     __$global.SystemJS = System;
     __$global.System = System.originalSystem;
   };
-
-  /*
+/*
  * Script tag fetch
  */
 
