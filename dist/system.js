@@ -1073,15 +1073,13 @@ function cjs(loader) {
         for (var _g in globals)
           glString += 'var ' + _g + ' = _g.' + _g + ';';
 
-        load.source = glString + '(function() { ' + load.source + '\n}).call(exports)';
-
         // disable AMD detection
         var define = loader.global.define;
         loader.global.define = undefined;
 
         var execLoad = {
           name: load.name,
-          source: glString + load.source,
+          source: glString + '(function() { ' + load.source + '\n}).call(exports)',
           address: load.address
         };
         loader.__exec(execLoad);
