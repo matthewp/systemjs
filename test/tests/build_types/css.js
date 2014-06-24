@@ -12,7 +12,7 @@ exports.instantiate = function(load) {
 				style.appendChild(document.createTextNode(load.source));
 			}
 			head.appendChild(style);
-			return new System.newModule({});
+			return System.newModule({});
 		}
 	};
 };
