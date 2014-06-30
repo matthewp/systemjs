@@ -313,6 +313,14 @@ asyncTest('Advanced compiler plugin', function() {
   }, err);
 });
 
+asyncTest('Plugin as a dependency', function() {
+  System.map['css'] = 'tests/css';
+  System['import']('tests/cjs-loading-plugin').then(function(m) {
+    ok(m.pluginSource == 'this is css');
+    start();
+  }, err);
+});
+
 asyncTest('AMD Circular', function() {
   System['import']('tests/amd-circular1').then(function(m) {
     ok(m.outFunc() == 5, 'Expected execution');
@@ -567,5 +575,13 @@ asyncTest("plugin instantiate hook", function(){
     start();
   });
 });
-console.log("start");
-QUnit.start();
+
+asyncTest('AMD simplified CommonJS wrapping with an aliased require', function() {
+  System['import']('tests/amd-simplified-cjs-aliased-require1').then(function(m) {
+    ok(m.require2,"got dependency from aliased require");
+    ok(m.require2.amdCJS,"got dependency from aliased require listed as a dependency");
+    start();
+  }, err);
+});
+
+

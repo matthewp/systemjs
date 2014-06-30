@@ -1,5 +1,5 @@
 /*
- * SystemJS v0.6.2
+ * SystemJS v0.6.7
  * 
  * Copyright (c) 2014 Guy Bedford
  * MIT License
@@ -570,23 +570,16 @@ function register(loader) {
     }
 
     // now execute
-    try {
-      entry.evaluated = true;
-      var output = entry.execute.call(loader.global, function(name) {
-        for (var i = 0; i < entry.deps.length; i++) {
-          if (entry.deps[i] != name)
-            continue;
-          return getModule(entry.normalizedDeps[i], loader);
-        }
-      }, entry.module['default'], moduleName);
-    }
-    catch(e) {
-      throw e;
-    }
+    entry.evaluated = true;
+    var output = entry.execute.call(loader.global, function(name) {
+      for (var i = 0; i < entry.deps.length; i++) {
+        if (entry.deps[i] != name)
+          continue;
+        return getModule(entry.normalizedDeps[i], loader);
+      }
+    }, entry.module['default'], moduleName);
     
-    if (output && output.__esModule)
-      entry.module = output;
-    else if (output)
+    if (output)
       entry.module['default'] = output;
   }
 
@@ -692,7 +685,14 @@ function register(loader) {
       anonRegister = null;
       calledRegister = false;
 
+      var System = loader.global.System = loader.global.System || loader;
+
+      var curRegister = System.register;
+      System.register = register;
+
       loader.__exec(load);
+
+      System.register = curRegister;
 
       if (anonRegister)
         entry = anonRegister;
@@ -737,7 +737,7 @@ function register(loader) {
         execute: function() {
           // this avoids double duplication allowing a bundle to equal its last defined module
           if (entry.esmodule) {
-            delete loader.defined[load.name];
+            loader.defined[load.name] = undefined;
             return entry.esmodule;
           }
 
@@ -749,12 +749,14 @@ function register(loader) {
           ensureEvaluated(load.name, [], loader);
 
           // remove from the registry
-          delete loader.defined[load.name];
+          loader.defined[load.name] = undefined;
 
           var module = loader.newModule(entry.module);
 
           // if the entry is an alias, set the alias too
           for (var name in loader.defined) {
+            if (!loader.defined[name])
+              continue;
             if (entry.declarative && loader.defined[name].execute != entry.execute)
               continue;
             if (!entry.declarative && loader.defined[name].declare != entry.declare);
@@ -1046,13 +1048,19 @@ function cjs(loader) {
   // CJS Module Format
   // require('...') || exports[''] = ... || exports.asd = ... || module.exports = ...
   var cjsExportsRegEx = /(?:^\s*|[}{\(\);,\n=:\?\&]\s*|module\.)(exports\s*\[\s*('[^']+'|"[^"]+")\s*\]|\exports\s*\.\s*[_$a-zA-Z\xA0-\uFFFF][_$a-zA-Z0-9\xA0-\uFFFF]*|exports\s*\=)/;
-  var cjsRequireRegEx = /(?:^\s*|[}{\(\);,\n=:\?\&]\s*)require\s*\(\s*("([^"]+)"|'([^']+)')\s*\)/g;
+  var cjsRequirePre = "(?:^\\s*|[}{\\(\\);,\\n=:\\?\\&]\\s*)";
+  var cjsRequirePost = "\\s*\\(\\s*(\"([^\"]+)\"|'([^']+)')\\s*\\)";
+  var cjsRequireRegEx = new RegExp(cjsRequirePre+"require"+cjsRequirePost,"g");
   var commentRegEx = /(\/\*([\s\S]*?)\*\/|([^:]|^)\/\/(.*)$)/mg;
 
-  function getCJSDeps(source) {
+  function getCJSDeps(source, requireAlias) {
     cjsExportsRegEx.lastIndex = 0;
-    cjsRequireRegEx.lastIndex = 0;
-
+    
+    // If a requireAlias is given, generate the regexp; otherwise, use the cached version.
+    var requireRegEx =  requireAlias ?
+        new RegExp(cjsRequirePre+(requireAlias)+cjsRequirePost,"g") :
+        cjsRequireRegEx;
+    requireRegEx.lastIndex = 0;
     var deps = [];
 
     // remove comments from the source first
@@ -1060,7 +1068,7 @@ function cjs(loader) {
 
     var match;
 
-    while (match = cjsRequireRegEx.exec(source))
+    while (match = requireRegEx.exec(source))
       deps.push(match[2] || match[3]);
 
     return deps;
@@ -1160,11 +1168,26 @@ function amd(loader) {
 
   var isNode = typeof module != 'undefined' && module.exports;
 
+  // Matches parenthesis
+  var parensRegExp = /\(([^)]+)/;
+  var commentRegEx = /(\/\*([\s\S]*?)\*\/|([^:]|^)\/\/(.*)$)/mg;
+  var argRegEx = /[\w\d]+/g;
+  function getRequireAlias(source, index){
+    var match = source.match(parensRegExp);
+    if(match){
+      var args = [];
+      match[1].replace(commentRegEx,"").replace(argRegEx, function(arg){
+        args.push(arg);
+      });
+      return args[index||0];
+    }
+  };
+  
+
   // AMD Module Format Detection RegEx
   // define([.., .., ..], ...)
   // define(varName); || define(function(require, exports) {}); || define({})
   var amdRegEx = /(?:^\s*|[}{\(\);,\n\?\&]\s*)define\s*\(\s*("[^"]+"\s*,\s*|'[^']+'\s*,\s*)?\s*(\[(\s*("[^"]+"|'[^']+')\s*,)*(\s*("[^"]+"|'[^']+')\s*,?\s*)?\]|function\s*|{|[_$a-zA-Z\xA0-\uFFFF][_$a-zA-Z0-9\xA0-\uFFFF]*\))/;
-
   /*
     AMD-compatible require
     To copy RequireJS, set window.require = window.requirejs = loader.require
@@ -1239,10 +1262,7 @@ function amd(loader) {
       }
       if (!(deps instanceof Array)) {
         factory = deps;
-        // CommonJS AMD form
-        if (!loader._getCJSDeps)
-          throw "AMD extension needs CJS extension for AMD CJS support";
-        deps = ['require', 'exports', 'module'].concat(loader._getCJSDeps(factory.toString()));
+        deps = ['require','exports','module']
       }
 
       if (typeof factory != 'function')
@@ -1252,8 +1272,17 @@ function amd(loader) {
 
       // remove system dependencies
       var requireIndex, exportsIndex, moduleIndex
-      if ((requireIndex = indexOf.call(deps, 'require')) != -1)
-        deps.splice(requireIndex, 1);
+      
+      if ((requireIndex = indexOf.call(deps, 'require')) != -1) {
+      	
+      	deps.splice(requireIndex, 1);
+        // CommonJS AMD form
+        if (!loader._getCJSDeps)
+          throw "AMD extension needs CJS extension for AMD CJS support";
+        var factoryText = factory.toString();
+        deps = deps.concat(loader._getCJSDeps(factoryText, getRequireAlias(factoryText, requireIndex)));
+      }
+        
 
       if ((exportsIndex = indexOf.call(deps, 'exports')) != -1)
         deps.splice(exportsIndex, 1);
@@ -1411,26 +1440,39 @@ function amd(loader) {
 function map(loader) {
   loader.map = loader.map || {};
 
-  // return the number of prefix parts (separated by '/') matching the name
-  // eg prefixMatchLength('jquery/some/thing', 'jquery') -> 1
-  function prefixMatchLength(name, prefix) {
-    var prefixParts = prefix.split('/');
-    var nameParts = name.split('/');
-    if (prefixParts.length > nameParts.length)
-      return 0;
-    for (var i = 0; i < prefixParts.length; i++)
-      if (nameParts[i] != prefixParts[i])
-        return 0;
-    return prefixParts.length;
+  // return if prefix parts (separated by '/') match the name
+  // eg prefixMatch('jquery/some/thing', 'jquery') -> true
+  //    prefixMatch('jqueryhere/', 'jquery') -> false
+  function prefixMatch(name, prefix) {
+    if (name.length < prefix.length)
+      return false;
+    if (name.substr(0, prefix.length) != prefix)
+      return false;
+    if (name[prefix.length] && name[prefix.length] != '/')
+      return false;
+    return true;
   }
 
+  // get the depth of a given path
+  // eg pathLen('some/name') -> 2
+  function pathLen(name) {
+    var len = 1;
+    for (var i = 0, l = name.length; i < l; i++)
+      if (name[i] === '/')
+        len++;
+    return len;
+  }
+
+  function doMap(name, matchLen, map) {
+    return map + name.substr(matchLen);
+  }
 
   // given a relative-resolved module name and normalized parent name,
   // apply the map configuration
   function applyMap(name, parentName, loader) {
-
     var curMatch, curMatchLength = 0;
     var curParent, curParentMatchLength = 0;
+    var tmpParentLength, tmpPrefixLength;
     var subPath;
     var nameParts;
     
@@ -1442,29 +1484,32 @@ function map(loader) {
           continue;
 
         // most specific parent match wins first
-        if (prefixMatchLength(parentName, p) <= curParentMatchLength)
+        if (!prefixMatch(parentName, p))
+          continue;
+
+        tmpParentLength = pathLen(p);
+        if (tmpParentLength <= curParentMatchLength)
           continue;
 
         for (var q in curMap) {
           // most specific name match wins
-          if (prefixMatchLength(name, q) <= curMatchLength)
+          if (!prefixMatch(name, q))
+            continue;
+          tmpPrefixLength = pathLen(q);
+          if (tmpPrefixLength <= curMatchLength)
             continue;
 
           curMatch = q;
-          curMatchLength = q.split('/').length;
+          curMatchLength = tmpPrefixLength;
           curParent = p;
-          curParentMatchLength = p.split('/').length;
+          curParentMatchLength = tmpParentLength;
         }
       }
     }
 
     // if we found a contextual match, apply it now
-    if (curMatch) {
-      nameParts = name.split('/');
-      subPath = nameParts.splice(curMatchLength, nameParts.length - curMatchLength).join('/');
-      name = loader.map[curParent][curMatch] + (subPath ? '/' + subPath : '');
-      curMatchLength = 0;
-    }
+    if (curMatch)
+      return doMap(name, curMatch.length, loader.map[curParent][curMatch]);
 
     // now do the global map
     for (var p in loader.map) {
@@ -1472,20 +1517,22 @@ function map(loader) {
       if (typeof curMap != 'string')
         continue;
 
-      if (prefixMatchLength(name, p) <= curMatchLength)
+      if (!prefixMatch(name, p))
+        continue;
+
+      var tmpPrefixLength = pathLen(p);
+
+      if (tmpPrefixLength <= curMatchLength)
         continue;
 
       curMatch = p;
-      curMatchLength = p.split('/').length;
+      curMatchLength = tmpPrefixLength;
     }
-    
-    // return a match if any
-    if (!curMatchLength)
-      return name;
-    
-    nameParts = name.split('/');
-    subPath = nameParts.splice(curMatchLength, nameParts.length - curMatchLength).join('/');
-    return loader.map[curMatch] + (subPath ? '/' + subPath : '');
+
+    if (curMatch)
+      return doMap(name, curMatch.length, loader.map[curMatch]);
+
+    return name;
   }
 
   var loaderNormalize = loader.normalize;
@@ -1928,7 +1975,6 @@ var __$curScript;
     var es6ModuleLoader = require('es6-module-loader');
     global.System = es6ModuleLoader.System;
     global.Loader = es6ModuleLoader.Loader;
-    global.Module = es6ModuleLoader.Module;
     global.upgradeSystemLoader();
     module.exports = global.System;
   }
