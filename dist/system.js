@@ -519,8 +519,9 @@ function register(loader) {
         return getModule(entry.normalizedDeps[i], loader);
       }
     }, entry.module['default'], moduleName);
-    
-    if (output)
+    if ( output && output.__esModule )
+      entry.module = output;
+    else if (output)
       entry.module['default'] = output;
   }
 
