@@ -584,4 +584,17 @@ asyncTest('AMD simplified CommonJS wrapping with an aliased require', function()
   }, err);
 });
 
-
+asyncTest('All global variables available with scriptEval option',function(){
+  System.meta["tests/global-variables"] = {format: "global", scriptEval: true};
+  System['import']('tests/global-variables').then(function(m){
+  	equal(m.foo,"bar","variable");
+  	equal(m.baz,"chaz","assignment");
+  	equal(m.zed,"ted","window property assignment");
+  	start();
+  }, function(){
+  	ok(false,"got error "+e);
+  	start();
+  });
+  
+  
+})
