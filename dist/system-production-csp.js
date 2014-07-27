@@ -958,6 +958,7 @@ function global(loader) {
       },
       retrieveGlobal: function(moduleName, exportName, init) {
         var singleGlobal;
+        var multipleExports;
         var exports = {};
 
         // run init
@@ -985,9 +986,9 @@ function global(loader) {
               exports[g] = loader.global[g];
               if (singleGlobal) {
                 if (singleGlobal !== loader.global[g])
-                  singleGlobal = undefined;
+                  multipleExports = true;
               }
-              else if (singleGlobal !== undefined) {
+              else if (singleGlobal === undefined) {
                 singleGlobal = loader.global[g];
               }
             }
@@ -996,7 +997,7 @@ function global(loader) {
 
         moduleGlobals[moduleName] = exports;
 
-        return typeof singleGlobal != 'undefined' ? singleGlobal : exports;
+        return multipleExports ? exports: singleGlobal;
       }
     }));
   }
