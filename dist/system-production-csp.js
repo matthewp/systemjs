@@ -1973,8 +1973,11 @@ var $__curScript, __eval;
     var originalSystem = $__global.System;
     __upgradeSystemLoader.call($__global);
     $__global.System.clone = function() {
+    	  var currentSystem = $__global.System;
     	  $__global.System = originalSystem;
-      return __upgradeSystemLoader.call($__global);
+      var SystemClone = __upgradeSystemLoader.call($__global);
+      $__global.System = currentSystem;
+      return SystemClone;
     };
   };
 
