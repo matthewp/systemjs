@@ -1007,7 +1007,7 @@ function global(loader) {
                 if (singleGlobal !== loader.global[g])
                   multipleExports = true;
               }
-              else if (singleGlobal !== false) {
+              else if (singleGlobal === undefined) {
                 singleGlobal = loader.global[g];
               }
             }
