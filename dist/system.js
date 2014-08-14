@@ -539,10 +539,16 @@ function register(loader) {
           continue;
         return getModule(entry.normalizedDeps[i], loader);
       }
+
     }, exports, module);
     
     if (output)
       module.exports = output;
+      
+    /*if ( output && output.__esModule )
+      entry.module = output;
+    else if (output)
+      entry.module['default'] = output;*/
   }
 
   /*
@@ -746,7 +752,7 @@ function core(loader) {
     return loaderImport.call(this, name, options).then(function(module) {
       return module.__useDefault ? module['default'] : module;
     });
-  }
+  };
 
   // support the empty module, as a concept
   loader.set('@empty', loader.newModule({}));
@@ -781,7 +787,7 @@ function core(loader) {
       else
         this[c] = v;
     }
-  }
+  };
 
   // override locate to allow baseURL to be document-relative
   var baseURI;
@@ -808,7 +814,7 @@ function core(loader) {
     }
 
     return Promise.resolve(loaderLocate.call(this, load));
-  }
+  };
 
 
   // Traceur conveniences
@@ -842,7 +848,7 @@ function core(loader) {
     }
 
     return loaderTranslate.call(loader, load);
-  }
+  };
 
   // always load Traceur as a global
   var loaderInstantiate = loader.instantiate;
@@ -858,7 +864,7 @@ function core(loader) {
       };
     }
     return loaderInstantiate.call(loader, load);
-  }
+  };
 }
 /*
   SystemJS Global Format
@@ -1050,14 +1056,19 @@ function cjs(loader) {
           __dirname: dirname
         };
 
-        load.source = '(function(global, exports, module, require, __filename, __dirname) { ' + load.source 
-          + '\n}).call(_g.exports, _g.global, _g.exports, _g.module, _g.require, _g.__filename, _g.__dirname);';
+
 
         // disable AMD detection
         var define = loader.global.define;
         loader.global.define = undefined;
 
-        loader.__exec(load);
+        var execLoad = {
+          name: load.name,
+          source: '(function() {\n(function(global, exports, module, require, __filename, __dirname){\n' + load.source + 
+                                  '\n}).call(_g.exports, _g.global, _g.exports, _g.module, _g.require, _g.__filename, _g.__dirname);})();',
+          address: load.address
+        };
+        loader.__exec(execLoad);
 
         loader.global.define = define;
 
@@ -1564,7 +1575,7 @@ function plugins(loader) {
       // standard normalization
       return name;
     });
-  }
+  };
 
   var loaderLocate = loader.locate;
   loader.locate = function(load) {
@@ -1598,6 +1609,7 @@ function plugins(loader) {
         load.metadata.plugin = plugin;
         load.metadata.pluginName = pluginName;
         load.metadata.pluginArgument = load.name;
+        load.metadata.buildType = plugin.buildType || "js";
 
         // run plugin locate if given
         if (plugin.locate)
@@ -1613,7 +1625,7 @@ function plugins(loader) {
     }
 
     return loaderLocate.call(this, load);
-  }
+  };
 
   var loaderFetch = loader.fetch;
   loader.fetch = function(load) {
@@ -1626,7 +1638,7 @@ function plugins(loader) {
     }
     else
       return loaderFetch.call(loader, load);
-  }
+  };
 
   var loaderTranslate = loader.translate;
   loader.translate = function(load) {
@@ -1639,17 +1651,20 @@ function plugins(loader) {
       });
     else
       return loaderTranslate.call(loader, load);
-  }
+  };
 
   var loaderInstantiate = loader.instantiate;
   loader.instantiate = function(load) {
     var loader = this;
     if (load.metadata.plugin && load.metadata.plugin.instantiate)
-      return Promise.resolve(load.metadata.plugin.instantiate.call(loader, load)).then(function(result) {
-        load.metadata.format = 'defined';
-        load.metadata.execute = function() {
+       return Promise.resolve(load.metadata.plugin.instantiate.call(loader, load)).then(function(result) {
+        if (result) {
+          // load.metadata.format = 'defined';
+          // load.metadata.execute = function() {
+          //   return result;
+          // };
           return result;
-        };
+        }
         return loaderInstantiate.call(loader, load);
       });
     else if (load.metadata.plugin && load.metadata.plugin.build === false) {
@@ -1662,8 +1677,7 @@ function plugins(loader) {
     }
     else
       return loaderInstantiate.call(loader, load);
-  }
-
+  };
 }/*
   System bundles
 
@@ -1720,7 +1734,7 @@ function bundles(loader) {
       });
     }
     return loaderFetch.call(this, load);
-  }
+  };
 }/*
   SystemJS Semver Version Addon
   
@@ -2002,23 +2016,25 @@ function depCache(loader) {
   }
 }
   
-meta(System);
-register(System);
-core(System);
-global(System);
-cjs(System);
-amd(System);
-map(System);
-plugins(System);
-bundles(System);
-versions(System);
-depCache(System);
+  meta(System);
+  register(System);
+  core(System);
+  global(System);
+  cjs(System);
+  amd(System);
+  map(System);
+  plugins(System);
+  bundles(System);
+  versions(System);
+  depCache(System);
   if (!System.paths['@traceur'])
     System.paths['@traceur'] = $__curScript && $__curScript.getAttribute('data-traceur-src')
       || ($__curScript && $__curScript.src 
         ? $__curScript.src.substr(0, $__curScript.src.lastIndexOf('/') + 1) 
         : System.baseURL + (System.baseURL.lastIndexOf('/') == System.baseURL.length - 1 ? '' : '/')
         ) + 'traceur.js';
+
+  return System;
 };
 
 var $__curScript, __eval;
@@ -2036,6 +2052,18 @@ var $__curScript, __eval;
     catch(e) {
       throw 'Error evaluating ' + address;
     }
+  };
+
+  // BITOVI hack to make cloning work.  
+  // original upgradeSystemLoader upgrades the global System.
+  var __upgradeSystemLoader = $__global.upgradeSystemLoader;
+  $__global.upgradeSystemLoader = function() {
+    var originalSystem = $__global.System;
+    __upgradeSystemLoader.call($__global);
+    $__global.System.clone = function() {
+    	  $__global.System = originalSystem;
+      return __upgradeSystemLoader.call($__global);
+    };
   };
 
   if (typeof window != 'undefined') {
