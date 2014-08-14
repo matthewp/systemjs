@@ -1,5 +1,7 @@
 "format global";
 
+(function() {
+
 QUnit.config.testTimeout = 2000;
 
 QUnit.module("SystemJS");
@@ -18,6 +20,8 @@ function err(e) {
   });  
 }
 
+var ie8 = typeof navigator != 'undefined' && navigator.appVersion && navigator.appVersion.indexOf('MSIE 8') != -1;
+
 asyncTest('Error handling', function() {
   System['import']('tests/error').then(err, function(e) {
     ok(true);
@@ -25,6 +29,7 @@ asyncTest('Error handling', function() {
   });
 });
 
+if (!ie8)
 asyncTest('Global script loading', function() {
   System['import']('tests/global').then(function(m) {
     ok(m.jjQuery && m.another, 'Global objects not defined');
@@ -32,9 +37,27 @@ asyncTest('Global script loading', function() {
   }, err);
 });
 
+if (!ie8)
+asyncTest('Global script with var syntax', function() {
+  System['import']('tests/global-single').then(function(m) {
+    ok(m == 'bar', 'Wrong global value');
+    start();
+  }, err);
+});
+
 asyncTest('Global script with multiple objects the same', function() {
   System['import']('tests/global-multi').then(function(m) {
     ok(m.jquery == 'here', 'Multi globals not detected');
+    start();
+  }, err);
+});
+
+if (!ie8)
+asyncTest('Global script multiple objects different', function() {
+  System['import']('tests/global-multi-diff').then(function(m) {
+    ok(m.foo == 'barz');
+    ok(m.baz == 'chaz');
+    ok(m.zed == 'ted');
     start();
   }, err);
 });
@@ -61,6 +84,7 @@ asyncTest('Global script with shim config', function() {
   }, err);
 });
 
+if (!ie8)
 asyncTest('Global script with inaccessible properties', function() {
   Object.defineProperty(System.global, 'errorOnAccess', {
     configurable: true,
@@ -80,6 +104,15 @@ asyncTest('Global script loading that detects as AMD with shim config', function
   System.meta['tests/global-shim-amd'] = { format: 'global' };
   System['import']('tests/global-shim-amd').then(function(m) {
     ok(m == 'global', 'Not shimmed');
+    start();
+  }, err);
+});
+
+if (!ie8)
+asyncTest('Meta should override meta syntax', function() {
+  System.meta['tests/meta-override'] = { format: 'es6' };
+  System['import']('tests/meta-override').then(function(m) {
+    ok(m.p == 'value', 'Not ES6');
     start();
   }, err);
 });
@@ -176,6 +209,13 @@ asyncTest('AMD detection test', function() {
   }, err);
 });
 
+asyncTest('AMD detection test with comments', function() {
+  System['import']('tests/amd-module-3').then(function(m) {
+    ok(m.amd);
+    start();
+  }, err);
+});
+
 System.bundles['tests/amd-bundle'] = ['bundle-1', 'bundle-2'];
 asyncTest('Loading an AMD bundle', function() {
   System['import']('bundle-1').then(function(m) {
@@ -185,20 +225,6 @@ asyncTest('Loading an AMD bundle', function() {
 
   stop();
   System['import']('bundle-2').then(function(m) {
-    ok(m.defined == true);
-    start();
-  }, err);
-});
-
-System.bundles['tests/amd-namespaced-bundle'] = ['bundle-ns-1', 'bundle-ns-2'];
-asyncTest('Loading a namespaced AMD bundle', function() {
-  System['import']('bundle-ns-1').then(function(m) {
-    ok(m.defined == true);
-    start();
-  }, err);
-
-  stop();
-  System['import']('bundle-ns-2').then(function(m) {
     ok(m.defined == true);
     start();
   }, err);
@@ -234,6 +260,13 @@ asyncTest('Loading a CommonJS module', function() {
 asyncTest('Loading a CommonJS module with this', function() {
   System['import']('tests/cjs-this').then(function(m) {
     ok(m.asdf == 'module value');
+    start();
+  }, err);
+});
+
+asyncTest('CommonJS setting module.exports', function() {
+  System['import']('tests/cjs-exports').then(function(m) {
+    ok(m.e = 'export');
     start();
   }, err);
 });
@@ -391,6 +424,17 @@ asyncTest('Loading System.register from ES6', function() {
 //});
 
 
+asyncTest('AMD simplified CommonJS wrapping with an aliased require', function() {
+  System['import']('tests/amd-simplified-cjs-aliased-require1').then(function(m) {
+    ok(m.require2,"got dependency from aliased require");
+    ok(m.require2.amdCJS,"got dependency from aliased require listed as a dependency");
+    start();
+  }, err);
+});
+
+if (ie8)
+  return;
+
 asyncTest('Wrapper module support', function() {
   System['import']('tests/wrapper').then(function(m) {
     ok(m['default'] == 'default1', 'Wrapper module not defined.');
@@ -459,6 +503,21 @@ asyncTest('Loading ES6 with format hint', function() {
   }, err);
 });
 
+asyncTest('Loading ES6 loading AMD', function() {
+  System['import']('tests/es6-loading-amd').then(function(m) {
+    ok(m.amd == true);
+    start();
+  })
+});
+
+asyncTest('Loading ES6 and AMD', function() {
+  System['import']('tests/es6-and-amd').then(function(m) {
+    ok(m.amd_module == 'AMD Module');
+    ok(m.es6_module == 'ES6 Module');
+    start();
+  }, err);
+});
+
 asyncTest('Module Name meta', function() {
   System['import']('tests/reflection').then(function(m) {
     ok(m.myname == 'tests/reflection', 'Module name not returned');
@@ -468,11 +527,13 @@ asyncTest('Module Name meta', function() {
 
 asyncTest('Relative dyanamic loading', function() {
   System['import']('tests/reldynamic').then(function(m) {
-    m.dynamicLoad().then(function(m) {
-      ok(m.dynamic == 'module', 'Dynamic load failed');
-      start();
-    }, err);
-  }, err);
+    return m.dynamicLoad();
+  })
+  .then(function(m) {
+    ok(m.dynamic == 'module', 'Dynamic load failed');
+    start();
+  })
+  ['catch'](err);
 });
 
 asyncTest('ES6 Circular', function() {
@@ -497,6 +558,9 @@ asyncTest('AMD -> System.register circular -> ES6', function() {
     start();
   }, err);
 });
+
+
+
 
 asyncTest("System.meta", function(){
   System.meta = {
@@ -584,17 +648,4 @@ asyncTest('AMD simplified CommonJS wrapping with an aliased require', function()
   }, err);
 });
 
-asyncTest('All global variables available with scriptEval option',function(){
-  System.meta["tests/global-variables"] = {format: "global", scriptEval: true};
-  System['import']('tests/global-variables').then(function(m){
-  	equal(m.foo,"bar","variable");
-  	equal(m.baz,"chaz","assignment");
-  	equal(m.zed,"ted","window property assignment");
-  	start();
-  }, function(){
-  	ok(false,"got error "+e);
-  	start();
-  });
-  
-  
-})
+})();
