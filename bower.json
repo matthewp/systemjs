@@ -3,7 +3,7 @@
   "version": "0.8.2",
   "main": "dist/system.js",
   "dependencies": {
-    "es6-module-loader": "~0.8.2"
+    "es6-module-loader": "bitovi/es6-module-loader#4d9f8aff0fd9d7f9a60261dfd8627a19ebe276ad"
   },
   "devDependencies": {
     "qunit": "~1.12.0"
