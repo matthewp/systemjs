@@ -71,7 +71,8 @@ $__global.upgradeSystemLoader = function() {
     $__global.System = System.originalSystem;
   }
 
-  /*
+  
+/*
  * Script tag fetch
  */
 
@@ -542,6 +543,9 @@ function register(loader) {
         depModule.importers.push(module);
         module.dependencies.push(depModule);
       }
+      else {
+        module.dependencies.push(null);
+      }
 
       // run the setter for this dependency
       if (module.setters[i])
@@ -853,8 +857,13 @@ function core(loader) {
 
   // override locate to allow baseURL to be document-relative
   var baseURI;
-  if (typeof window == 'undefined') {
+  if (typeof window == 'undefined' &&
+      typeof WorkerGlobalScope == 'undefined') {
     baseURI = process.cwd() + '/';
+  }
+  // Inside of a Web Worker
+  else if(typeof window == 'undefined') {
+    baseURI = loader.global.location.href;
   }
   else {
     baseURI = document.baseURI;
@@ -1118,12 +1127,18 @@ function cjs(loader) {
           __dirname: dirname
         };
 
+<<<<<<< HEAD
 
+=======
+        var source = '(function(global, exports, module, require, __filename, __dirname) { ' + load.source 
+          + '\n}).call(_g.exports, _g.global, _g.exports, _g.module, _g.require, _g.__filename, _g.__dirname);';
+>>>>>>> 70fa19591b0c9b783b7c8b0bab8ac92ef894c3fe
 
         // disable AMD detection
         var define = loader.global.define;
         loader.global.define = undefined;
 
+<<<<<<< HEAD
         var execLoad = {
           name: load.name,
           source: '(function() {\n(function(global, exports, module, require, __filename, __dirname){\n' + load.source + 
@@ -1131,6 +1146,13 @@ function cjs(loader) {
           address: load.address
         };
         loader.__exec(execLoad);
+=======
+        loader.__exec({
+          name: load.name,
+          address: load.address,
+          source: source
+        });
+>>>>>>> 70fa19591b0c9b783b7c8b0bab8ac92ef894c3fe
 
         loader.global.define = define;
 
@@ -1146,7 +1168,6 @@ function cjs(loader) {
   as well as a RequireJS-style require on System.require
 */
 function amd(loader) {
-
   // by default we only enforce AMD noConflict mode in Node
   var isNode = typeof module != 'undefined' && module.exports;
 
@@ -1966,6 +1987,7 @@ var $__curScript, __eval;
     }
   };
 
+<<<<<<< HEAD
   // BITOVI hack to make cloning work.  
   // original upgradeSystemLoader upgrades the global System.
   var __upgradeSystemLoader = $__global.upgradeSystemLoader;
@@ -1982,6 +2004,13 @@ var $__curScript, __eval;
   };
 
   if (typeof window != 'undefined') {
+=======
+  var isWorker = typeof WorkerGlobalScope !== 'undefined' &&
+    self instanceof WorkerGlobalScope;
+  var isBrowser = typeof window != 'undefined';
+
+  if (isBrowser) {
+>>>>>>> 70fa19591b0c9b783b7c8b0bab8ac92ef894c3fe
     var head;
 
     var scripts = document.getElementsByTagName('script');
@@ -2018,6 +2047,29 @@ var $__curScript, __eval;
       $__global.upgradeSystemLoader();
     }
   }
+  else if(isWorker) {
+    doEval = function(source) {
+      try {
+        eval(source);
+      } catch(e) {
+        throw e;
+      }
+    };
+
+    if (!$__global.System || !$__global.LoaderPolyfill) {
+      var basePath = '';
+      try {
+        throw new Error('Getting the path');
+      } catch(err) {
+        var idx = err.stack.indexOf('at ') + 3;
+        var withSystem = err.stack.substr(idx, err.stack.substr(idx).indexOf('\n'));
+        basePath = withSystem.substr(0, withSystem.lastIndexOf('/') + 1);
+      }
+      importScripts(basePath + 'es6-module-loader.js');
+    } else {
+      $__global.upgradeSystemLoader();
+    }
+  }
   else {
     var es6ModuleLoader = require('es6-module-loader');
     $__global.System = es6ModuleLoader.System;
@@ -2033,6 +2085,5 @@ var $__curScript, __eval;
   }
 })();
 
-})(typeof window != 'undefined' ? window : global);
-      
-      
+})(typeof window != 'undefined' ? window : (typeof WorkerGlobalScope != 'undefined' ?
+                                           self : global));
