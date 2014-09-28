@@ -10,7 +10,7 @@
   "author": "Guy Bedford",
   "license": "MIT",
   "dependencies": {
-    "es6-module-loader": "git://github.com/bitovi/es6-module-loader#4d9f8aff0fd9d7f9a60261dfd8627a19ebe276ad"
+    "es6-module-loader": "git://github.com/bitovi/es6-module-loader#0ea3ae53f51e876c70a3a0de971bc74273eb7d98"
   },
   "devDependencies": {
     "qunit": "^0.6.2",
