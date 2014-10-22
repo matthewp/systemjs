@@ -592,4 +592,14 @@ if(typeof window !== 'undefined' && window.Worker) {
   });
 }
 
+asyncTest('Relative paths', function() {
+  System.paths['one'] = 'tests/path-relative/one.js';
+  //System.map['one'] = 'tests/path-relative/one';
+  System['import']('one').then(function(mod) {
+    ok(mod.a == 'a');
+    ok(mod.b == 'b');
+    start();
+  });
+});
+
 })();
