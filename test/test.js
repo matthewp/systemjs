@@ -648,4 +648,15 @@ asyncTest('AMD simplified CommonJS wrapping with an aliased require', function()
   }, err);
 });
 
+if(typeof window !== 'undefined' && window.Worker) {
+  asyncTest('Using SystemJS in a Web Worker', function() {
+    var worker = new Worker('tests/worker.js');
+    worker.onmessage = function(e) {
+      ok(e.data.amd === 'AMD Module');
+      ok(e.data.es6 === 'ES6 Module');
+      start();
+    };
+  });
+}
+
 })();
