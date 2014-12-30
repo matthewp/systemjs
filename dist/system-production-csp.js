@@ -1,5 +1,5 @@
 /*
- * SystemJS v0.8.1
+ * SystemJS v0.8.2
  */
 
 (function($__global) {
@@ -1127,18 +1127,11 @@ function cjs(loader) {
           __dirname: dirname
         };
 
-<<<<<<< HEAD
-
-=======
-        var source = '(function(global, exports, module, require, __filename, __dirname) { ' + load.source 
-          + '\n}).call(_g.exports, _g.global, _g.exports, _g.module, _g.require, _g.__filename, _g.__dirname);';
->>>>>>> 70fa19591b0c9b783b7c8b0bab8ac92ef894c3fe
 
         // disable AMD detection
         var define = loader.global.define;
         loader.global.define = undefined;
 
-<<<<<<< HEAD
         var execLoad = {
           name: load.name,
           source: '(function() {\n(function(global, exports, module, require, __filename, __dirname){\n' + load.source + 
@@ -1146,13 +1139,6 @@ function cjs(loader) {
           address: load.address
         };
         loader.__exec(execLoad);
-=======
-        loader.__exec({
-          name: load.name,
-          address: load.address,
-          source: source
-        });
->>>>>>> 70fa19591b0c9b783b7c8b0bab8ac92ef894c3fe
 
         loader.global.define = define;
 
@@ -1162,7 +1148,8 @@ function cjs(loader) {
 
     return loaderInstantiate.call(this, load);
   };
-}/*
+}
+/*
   SystemJS AMD Format
   Provides the AMD module format definition at System.format.amd
   as well as a RequireJS-style require on System.require
@@ -1987,7 +1974,6 @@ var $__curScript, __eval;
     }
   };
 
-<<<<<<< HEAD
   // BITOVI hack to make cloning work.  
   // original upgradeSystemLoader upgrades the global System.
   var __upgradeSystemLoader = $__global.upgradeSystemLoader;
@@ -2003,14 +1989,11 @@ var $__curScript, __eval;
     };
   };
 
-  if (typeof window != 'undefined') {
-=======
   var isWorker = typeof WorkerGlobalScope !== 'undefined' &&
     self instanceof WorkerGlobalScope;
   var isBrowser = typeof window != 'undefined';
 
   if (isBrowser) {
->>>>>>> 70fa19591b0c9b783b7c8b0bab8ac92ef894c3fe
     var head;
 
     var scripts = document.getElementsByTagName('script');
