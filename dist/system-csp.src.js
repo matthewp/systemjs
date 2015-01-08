@@ -1,5 +1,5 @@
 /*
- * SystemJS v0.8.2
+ * SystemJS v0.11.1
  */
 
 (function($__global) {
@@ -17,7 +17,7 @@ $__global.upgradeSystemLoader = function() {
 
   // Absolute URL parsing, from https://gist.github.com/Yaffle/1088850
   function parseURI(url) {
-    var m = String(url).replace(/^\s+|\s+$/g, '').match(/^([^:\/?#]+:)?(\/\/(?:[^:@]*(?::[^:@]*)?@)?(([^:\/?#]*)(?::(\d*))?))?([^?#]*)(\?[^#]*)?(#[\s\S]*)?/);
+    var m = String(url).replace(/^\s+|\s+$/g, '').match(/^([^:\/?#]+:)?(\/\/(?:[^:@\/?#]*(?::[^:@\/?#]*)?@)?(([^:\/?#]*)(?::(\d*))?))?([^?#]*)(\?[^#]*)?(#[\s\S]*)?/);
     // authority = '//' + user + ':' + pass '@' + hostname + ':' port
     return (m ? {
       href     : m[0] || '',
@@ -101,6 +101,10 @@ function scriptLoader(loader) {
         // this load record has just executed
         loader.onScriptLoad(load);
 
+        // if nothing registered, then something went wrong
+        if (!load.metadata.registered)
+          reject(load.address + ' did not call System.register or AMD define');
+
         resolve('');
       }
 
@@ -155,7 +159,7 @@ function scriptLoader(loader) {
  *   console.log('this is my/module');
  *
  * The benefit of inline meta is that coniguration doesn't need
- * to be known in advanced, which is useful for modularising
+ * to be known in advance, which is useful for modularising
  * configuration and avoiding the need for configuration injection.
  *
  *
@@ -227,7 +231,8 @@ function meta(loader) {
     
     return loaderTranslate.call(this, load);
   }
-}/*
+}
+/*
  * Instantiate registry extension
  *
  * Supports Traceur System.register 'instantiate' output for loading ES6 as ES5.
@@ -326,8 +331,6 @@ function register(loader) {
     }
     else {
       // ES6 declarative
-      if (deps.length > 0 && declare.length != 1)
-        throw 'Invalid System.register form for ' + name + '. Declare function must take one argument.';
       register = {
         declarative: true,
         deps: deps,
@@ -345,7 +348,7 @@ function register(loader) {
     // anonymous register
     else if (register.declarative) {
       if (anonRegister)
-        throw 'Multiple anonymous System.register calls in the same module file.';
+        throw new TypeError('Multiple anonymous System.register calls in the same module file.');
       anonRegister = register;
     }
   }
@@ -397,10 +400,10 @@ function register(loader) {
       if (anonRegister)
         load.metadata.entry = anonRegister;
       
-      if (anonRegister || calledRegister)
+      if (calledRegister) {
         load.metadata.format = load.metadata.format || 'register';
-      if (calledRegister)
         load.metadata.registered = true;
+      }
     }
   }
 
@@ -508,7 +511,7 @@ function register(loader) {
     module.execute = declaration.execute;
 
     if (!module.setters || !module.execute) {
-      throw "Invalid System.register form for " + entry.name;
+      throw new TypeError('Invalid System.register form for ' + entry.name);
     }
 
     // now link all the module dependencies
@@ -561,9 +564,7 @@ function register(loader) {
     if (!entry) {
       exports = loader.get(name);
       if (!exports)
-        throw "System Register: The module requested " + name + " but this was not declared as a dependency";
-      if (exports.__useDefault)
-        exports = exports['default'];
+        throw new Error('Unable to load dependency ' + name + '.');
     }
 
     else {
@@ -576,6 +577,9 @@ function register(loader) {
       exports = entry.module.exports;
     }
 
+    if ((!entry || entry.declarative) && exports && exports.__useDefault)
+      return exports['default'];
+    
     return exports;
   }
 
@@ -605,7 +609,7 @@ function register(loader) {
           continue;
         return getModule(entry.normalizedDeps[i], loader);
       }
-
+      throw new TypeError('Module ' + name + ' not declared as a dependency.');
     }, exports, module);
     
     if (output)
@@ -702,8 +706,10 @@ function register(loader) {
     var entry;
 
     // first we check if this module has already been defined in the registry
-    if (loader.defined[load.name])
+    if (loader.defined[load.name]) {
       entry = loader.defined[load.name];
+      entry.deps = entry.deps.concat(load.metadata.deps);
+    }
 
     // picked up already by a script injection
     else if (load.metadata.entry)
@@ -736,8 +742,11 @@ function register(loader) {
       if (anonRegister)
         entry = anonRegister;
 
+      if (!entry && System.defined[load.name])
+        entry = System.defined[load.name];
+
       if (!calledRegister && !load.metadata.registered)
-        throw load.name + " detected as System.register but didn't execute.";
+        throw new TypeError(load.name + ' detected as System.register but didn\'t execute.');
     }
 
     // named bundles are just an empty module
@@ -783,7 +792,6 @@ function register(loader) {
           loader.defined[load.name] = undefined;
 
           var module = loader.newModule(entry.declarative ? entry.module.exports : { 'default': entry.module.exports, '__useDefault': true });
-          entry.module.module = module;
 
           // return the defined module object
           return module;
@@ -823,6 +831,10 @@ function core(loader) {
   // support the empty module, as a concept
   loader.set('@empty', loader.newModule({}));
 
+  // include the node require since we're overriding it
+  if (typeof require != 'undefined')
+    loader._nodeRequire = require;
+
   /*
     Config
     Extends config merging one deep only
@@ -859,7 +871,7 @@ function core(loader) {
   var baseURI;
   if (typeof window == 'undefined' &&
       typeof WorkerGlobalScope == 'undefined') {
-    baseURI = process.cwd() + '/';
+    baseURI = 'file:' + process.cwd() + '/';
   }
   // Inside of a Web Worker
   else if(typeof window == 'undefined') {
@@ -887,24 +899,18 @@ function core(loader) {
     return Promise.resolve(loaderLocate.call(this, load));
   };
 
-
   // Traceur conveniences
-  var aliasRegEx = /^\s*export\s*\*\s*from\s*(?:'([^']+)'|"([^"]+)")/;
-  var es6RegEx = /(?:^\s*|[}{\(\);,\n]\s*)(import\s+['"]|(import|module)\s+[^"'\(\)\n;]+\s+from\s+['"]|export\s+(\*|\{|default|function|var|const|let|[_$a-zA-Z\xA0-\uFFFF][_$a-zA-Z0-9\xA0-\uFFFF]*))/;
+  // good enough ES6 detection regex - format detections not designed to be accurate, but to handle the 99% use case
+  var es6RegEx = /(^\s*|[}\);\n]\s*)(import\s+(['"]|(\*\s+as\s+)?[^"'\(\)\n;]+\s+from\s+['"]|\{)|export\s+\*\s+from\s+["']|export\s+(\{|default|function|class|var|const|let|async\s+function))/;
+
+  var traceurRuntimeRegEx = /\$traceurRuntime/;
 
   var loaderTranslate = loader.translate;
   loader.translate = function(load) {
     var loader = this;
 
-    if (load.name == '@traceur')
+    if (load.name == '@traceur' || load.name == '@traceur-runtime')
       return loaderTranslate.call(loader, load);
-
-    // support ES6 alias modules ("export * from 'module';") without needing Traceur
-    var match;
-    if ((load.metadata.format == 'es6' || !load.metadata.format) && (match = load.source.match(aliasRegEx))) {
-      load.metadata.format = 'cjs';
-      load.source = 'module.exports = require("' + (match[1] || match[2]) + '");\n';
-    }
 
     // detect ES6
     else if (load.metadata.format == 'es6' || !load.metadata.format && load.source.match(es6RegEx)) {
@@ -918,6 +924,16 @@ function core(loader) {
       }
     }
 
+    // dynamicallly load Traceur runtime if necessary
+    if (!loader.global.$traceurRuntime && load.source.match(traceurRuntimeRegEx)) {
+      var System = $__global.System;
+      return loader['import']('@traceur-runtime').then(function() {
+        // traceur runtme annihilates System global
+        $__global.System = System;
+        return loaderTranslate.call(loader, load);
+      });
+    }
+
     return loaderTranslate.call(loader, load);
   };
 
@@ -925,7 +941,7 @@ function core(loader) {
   var loaderInstantiate = loader.instantiate;
   loader.instantiate = function(load) {
     var loader = this;
-    if (load.name == '@traceur') {
+    if (load.name == '@traceur' || load.name == '@traceur-runtime') {
       loader.__exec(load);
       return {
         deps: [],
@@ -949,6 +965,14 @@ function core(loader) {
   See the SystemJS readme global support section for further information.
 */
 function global(loader) {
+
+  function readGlobalProperty(p, value) {
+    var pParts = p.split('.');
+    while (pParts.length)
+      value = value[pParts.shift()];
+    return value;
+  }
+
   function createHelpers(loader) {
     if (loader.has('@@global-helpers'))
       return;
@@ -972,7 +996,10 @@ function global(loader) {
         // now store a complete copy of the global object
         // in order to detect changes
         curGlobalObj = {};
-        ignoredGlobalProps = ['indexedDB', 'sessionStorage', 'localStorage', 'clipboardData', 'frames', 'webkitStorageInfo'];
+        ignoredGlobalProps = ['indexedDB', 'sessionStorage', 'localStorage',
+          'clipboardData', 'frames', 'webkitStorageInfo', 'toolbar', 'statusbar',
+          'scrollbars', 'personalbar', 'menubar', 'locationbar', 'webkitIndexedDB'
+        ];
         for (var g in loader.global) {
           if (indexOf.call(ignoredGlobalProps, g) != -1) { continue; }
           if (!hasOwnProperty || loader.global.hasOwnProperty(g)) {
@@ -1002,7 +1029,7 @@ function global(loader) {
         // if one global, then that is the module directly
         else if (exportName) {
           var firstPart = exportName.split('.')[0];
-          singleGlobal = eval.call(loader.global, exportName);
+          singleGlobal = readGlobalProperty(exportName, loader.global);
           exports[firstPart] = loader.global[firstPart];
         }
 
@@ -1077,23 +1104,24 @@ function cjs(loader) {
 
   // CJS Module Format
   // require('...') || exports[''] = ... || exports.asd = ... || module.exports = ...
-  var cjsExportsRegEx = /(?:^\s*|[}{\(\);,\n=:\?\&]\s*|module\.)(exports\s*\[\s*('[^']+'|"[^"]+")\s*\]|\exports\s*\.\s*[_$a-zA-Z\xA0-\uFFFF][_$a-zA-Z0-9\xA0-\uFFFF]*|exports\s*\=)/;
-  var cjsRequireRegEx = /(?:^\s*|[}{\(\);,\n=:\?\&]\s*)require\s*\(\s*("([^"]+)"|'([^']+)')\s*\)/g;
+  var cjsExportsRegEx = /(?:^\uFEFF?|[^$_a-zA-Z\xA0-\uFFFF.]|module\.)(exports\s*\[['"]|\exports\s*\.)|(?:^\uFEFF?|[^$_a-zA-Z\xA0-\uFFFF.])module\.exports\s*\=/;
+  // RegEx adjusted from https://github.com/jbrantly/yabble/blob/master/lib/yabble.js#L339
+  var cjsRequireRegEx = /(?:^\uFEFF?|[^$_a-zA-Z\xA0-\uFFFF."'])require\s*\(\s*("[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*')\s*\)/g;
   var commentRegEx = /(\/\*([\s\S]*?)\*\/|([^:]|^)\/\/(.*)$)/mg;
 
   function getCJSDeps(source) {
-    cjsExportsRegEx.lastIndex = 0;
     cjsRequireRegEx.lastIndex = 0;
 
     var deps = [];
 
-    // remove comments from the source first
-    var source = source.replace(commentRegEx, '');
+    // remove comments from the source first, if not minified
+    if (source.length / source.split('\n').length < 200)
+      source = source.replace(commentRegEx, '');
 
     var match;
 
     while (match = cjsRequireRegEx.exec(source))
-      deps.push(match[2] || match[3]);
+      deps.push(match[1].substr(1, match[1].length - 2));
 
     return deps;
   }
@@ -1118,12 +1146,16 @@ function cjs(loader) {
         dirname.pop();
         dirname = dirname.join('/');
 
+        // if on the server, remove the "file:" part from the dirname
+        if (System._nodeRequire)
+          dirname = dirname.substr(5);
+
         var globals = loader.global._g = {
           global: loader.global,
           exports: exports,
           module: module,
           require: require,
-          __filename: load.address,
+          __filename: System._nodeRequire ? load.address.substr(5) : load.address,
           __dirname: dirname
         };
 
@@ -1161,10 +1193,10 @@ function amd(loader) {
   // AMD Module Format Detection RegEx
   // define([.., .., ..], ...)
   // define(varName); || define(function(require, exports) {}); || define({})
-  var amdRegEx = /(?:^\s*|[}{\(\);,\n\?\&]\s*)define\s*\(\s*("[^"]+"\s*,\s*|'[^']+'\s*,\s*)?\s*(\[(\s*(("[^"]+"|'[^']+')\s*,|\/\/.*\r?\n|\/\*(.|\s)*?\*\/))*(\s*("[^"]+"|'[^']+')\s*,?)?(\s*(\/\/.*\r?\n|\/\*(.|\s)*?\*\/))*\s*\]|function\s*|{|[_$a-zA-Z\xA0-\uFFFF][_$a-zA-Z0-9\xA0-\uFFFF]*\))/;
+  var amdRegEx = /(?:^\uFEFF?|[^$_a-zA-Z\xA0-\uFFFF.])define\s*\(\s*("[^"]+"\s*,\s*|'[^']+'\s*,\s*)?\s*(\[(\s*(("[^"]+"|'[^']+')\s*,|\/\/.*\r?\n|\/\*(.|\s)*?\*\/))*(\s*("[^"]+"|'[^']+')\s*,?)?(\s*(\/\/.*\r?\n|\/\*(.|\s)*?\*\/))*\s*\]|function\s*|{|[_$a-zA-Z\xA0-\uFFFF][_$a-zA-Z0-9\xA0-\uFFFF]*\))/;
   var commentRegEx = /(\/\*([\s\S]*?)\*\/|([^:]|^)\/\/(.*)$)/mg;
 
-  var cjsRequirePre = "(?:^\\s*|[}{\\(\\);,\\n=:\\?\\&]\\s*)";
+  var cjsRequirePre = "(?:^|[^$_a-zA-Z\\xA0-\\uFFFF.])";
   var cjsRequirePost = "\\s*\\(\\s*(\"([^\"]+)\"|'([^']+)')\\s*\\)";
 
   var fnBracketRegEx = /\(([^\)]*)\)/;
@@ -1213,7 +1245,9 @@ function amd(loader) {
       Promise.all(names.map(function(name) {
         return loader['import'](name, referer);
       })).then(function(modules) {
-        callback.apply(null, modules);
+        if(callback) {
+          callback.apply(null, modules);
+        }
       }, errback);
 
     // commonjs require
@@ -1223,7 +1257,7 @@ function amd(loader) {
     }
 
     else
-      throw 'Invalid require';
+      throw new TypeError('Invalid require');
   };
   loader.amdRequire = require;
 
@@ -1241,8 +1275,10 @@ function amd(loader) {
     var onScriptLoad = loader.onScriptLoad;
     loader.onScriptLoad = function(load) {
       onScriptLoad(load);
-      if (anonDefine || defineBundle)
+      if (anonDefine || defineBundle) {
         load.metadata.format = 'defined';
+        load.metadata.registered = true;
+      }
 
       if (anonDefine) {
         load.metadata.deps = load.metadata.deps ? load.metadata.deps.concat(anonDefine.deps) : anonDefine.deps;
@@ -1325,7 +1361,7 @@ function amd(loader) {
       if (!name) {
         // already defined anonymously -> throw
         if (anonDefine)
-          throw "Multiple defines for anonymous module";
+          throw new TypeError('Multiple defines for anonymous module');
         anonDefine = define;
       }
       // named define
@@ -1409,33 +1445,16 @@ function amd(loader) {
     if (load.metadata.format == 'amd' || !load.metadata.format && load.source.match(amdRegEx)) {
       load.metadata.format = 'amd';
 
-      createDefine(loader);
+      if (loader.execute !== false) {
+        createDefine(loader);
 
-      try {
         loader.__exec(load);
-      }
-      catch(e) {
-        if (loader.execute === false && isNode) {
-          // use a regular expression to pull out deps
-          var match = load.source.match(amdRegEx);
-          if (match) {
-            // named or anonymous
-            if (match[1] && match[1][0] == '[')
-              define(match[1].substr(match[1].length - 2), eval(match[2]), function() {});
-            else if (match[2] && match[2][0] == '[')
-              define(eval(match[2]), function() {});
-            else
-              define(function() {});
-          }
-        }
-        else
-          throw e;
-      }
 
-      removeDefine(loader);
+        removeDefine(loader);
 
-      if (!anonDefine && !defineBundle && !isNode)
-        throw "AMD module " + load.name + " did not define";
+        if (!anonDefine && !defineBundle && !isNode)
+          throw new TypeError('AMD module ' + load.name + ' did not define');
+      }
 
       if (anonDefine) {
         load.metadata.deps = load.metadata.deps ? load.metadata.deps.concat(anonDefine.deps) : anonDefine.deps;
@@ -1599,6 +1618,160 @@ function map(loader) {
   }
 }
 /*
+  SystemJS Plugin Support
+
+  Supports plugin syntax with "!"
+
+  The plugin name is loaded as a module itself, and can override standard loader hooks
+  for the plugin resource. See the plugin section of the systemjs readme.
+*/
+function plugins(loader) {
+  if (typeof indexOf == 'undefined')
+    indexOf = Array.prototype.indexOf;
+
+  var loaderNormalize = loader.normalize;
+  loader.normalize = function(name, parentName, parentAddress) {
+    var loader = this;
+    // if parent is a plugin, normalize against the parent plugin argument only
+    var parentPluginIndex;
+    if (parentName && (parentPluginIndex = parentName.indexOf('!')) != -1)
+      parentName = parentName.substr(0, parentPluginIndex);
+
+    return Promise.resolve(loaderNormalize.call(loader, name, parentName, parentAddress))
+    .then(function(name) {
+      // if this is a plugin, normalize the plugin name and the argument
+      var pluginIndex = name.lastIndexOf('!');
+      if (pluginIndex != -1) {
+        var argumentName = name.substr(0, pluginIndex);
+
+        // plugin name is part after "!" or the extension itself
+        var pluginName = name.substr(pluginIndex + 1) || argumentName.substr(argumentName.lastIndexOf('.') + 1);
+
+        // normalize the plugin name relative to the same parent
+        return new Promise(function(resolve) {
+          resolve(loader.normalize(pluginName, parentName, parentAddress)); 
+        })
+        // normalize the plugin argument
+        .then(function(_pluginName) {
+          pluginName = _pluginName;
+          return loader.normalize(argumentName, parentName, parentAddress);
+        })
+        .then(function(argumentName) {
+          return argumentName + '!' + pluginName;
+        });
+      }
+
+      // standard normalization
+      return name;
+    });
+  };
+
+  var loaderLocate = loader.locate;
+  loader.locate = function(load) {
+    var loader = this;
+
+    var name = load.name;
+
+    // only fetch the plugin itself if this name isn't defined
+    if (this.defined && this.defined[name])
+      return loaderLocate.call(this, load);
+
+    // plugin
+    var pluginIndex = name.lastIndexOf('!');
+    if (pluginIndex != -1) {
+      var pluginName = name.substr(pluginIndex + 1);
+
+      // the name to locate is the plugin argument only
+      load.name = name.substr(0, pluginIndex);
+
+      var pluginLoader = loader.pluginLoader || loader;
+
+      // load the plugin module
+      // NB ideally should use pluginLoader.load for normalized,
+      //    but not currently working for some reason
+      return pluginLoader['import'](pluginName)
+      .then(function() {
+        var plugin = pluginLoader.get(pluginName);
+        plugin = plugin['default'] || plugin;
+
+        // allow plugins to opt-out of build
+        if (plugin.build === false && loader.pluginLoader)
+          load.metadata.build = false;
+
+        // store the plugin module itself on the metadata
+        load.metadata.plugin = plugin;
+        load.metadata.pluginName = pluginName;
+        load.metadata.pluginArgument = load.name;
+        load.metadata.buildType = plugin.buildType || "js";
+
+        // run plugin locate if given
+        if (plugin.locate)
+          return plugin.locate.call(loader, load);
+
+        // otherwise use standard locate without '.js' extension adding
+        else
+          return Promise.resolve(loader.locate(load))
+          .then(function(address) {
+            return address.substr(0, address.length - 3);
+          });
+      });
+    }
+
+    return loaderLocate.call(this, load);
+  };
+
+  var loaderFetch = loader.fetch;
+  loader.fetch = function(load) {
+    var loader = this;
+    if (load.metadata.build === false)
+      return '';
+    else if (load.metadata.plugin && load.metadata.plugin.fetch && !load.metadata.pluginFetchCalled) {
+      load.metadata.pluginFetchCalled = true;
+      return load.metadata.plugin.fetch.call(loader, load, loaderFetch);
+    }
+    else
+      return loaderFetch.call(loader, load);
+  };
+
+  var loaderTranslate = loader.translate;
+  loader.translate = function(load) {
+    var loader = this;
+    if (load.metadata.plugin && load.metadata.plugin.translate)
+      return Promise.resolve(load.metadata.plugin.translate.call(loader, load)).then(function(result) {
+        if (result)
+          load.source = result;
+        return loaderTranslate.call(loader, load);
+      });
+    else
+      return loaderTranslate.call(loader, load);
+  };
+
+  var loaderInstantiate = loader.instantiate;
+  loader.instantiate = function(load) {
+    var loader = this;
+    if (load.metadata.plugin && load.metadata.plugin.instantiate)
+       return Promise.resolve(load.metadata.plugin.instantiate.call(loader, load)).then(function(result) {
+        if (result) {
+          // load.metadata.format = 'defined';
+          // load.metadata.execute = function() {
+          //   return result;
+          // };
+          return result;
+        }
+        return loaderInstantiate.call(loader, load);
+      });
+    else if (load.metadata.plugin && load.metadata.plugin.build === false) {
+      load.metadata.format = 'defined';
+      load.metadata.deps.push(load.metadata.pluginName);
+      load.metadata.execute = function() {
+        return loader.newModule({});
+      };
+      return loaderInstantiate.call(loader, load);
+    }
+    else
+      return loaderInstantiate.call(loader, load);
+  };
+}/*
   System bundles
 
   Allows a bundle module to be specified which will be dynamically 
@@ -1656,246 +1829,6 @@ function bundles(loader) {
     return loaderFetch.call(this, load);
   };
 }/*
-  SystemJS Semver Version Addon
-  
-  1. Uses Semver convention for major and minor forms
-
-  Supports requesting a module from a package that contains a version suffix
-  with the following semver ranges:
-    module       - any version
-    module@1     - major version 1, any minor (not prerelease)
-    module@1.2   - minor version 1.2, any patch (not prerelease)
-    module@1.2.3 - exact version
-
-  It is assumed that these modules are provided by the server / file system.
-
-  First checks the already-requested packages to see if there are any packages 
-  that would match the same package and version range.
-
-  This provides a greedy algorithm as a simple fix for sharing version-managed
-  dependencies as much as possible, which can later be optimized through version
-  hint configuration created out of deeper version tree analysis.
-  
-  2. Semver-compatibility syntax (caret operator - ^)
-
-  Compatible version request support is then also provided for:
-
-    module@^1.2.3        - module@1, >=1.2.3
-    module@^1.2          - module@1, >=1.2.0
-    module@^1            - module@1
-    module@^0.5.3        - module@0.5, >= 0.5.3
-    module@^0.0.1        - module@0.0.1
-
-  The ^ symbol is always normalized out to a normal version request.
-
-  This provides comprehensive semver compatibility.
-  
-  3. System.versions version hints and version report
-
-  Note this addon should be provided after all other normalize overrides.
-
-  The full list of versions can be found at System.versions providing an insight
-  into any possible version forks.
-
-  It is also possible to create version solution hints on the System global:
-
-  System.versions = {
-    jquery: ['1.9.2', '2.0.3'],
-    bootstrap: '3.0.1'
-  };
-
-  Versions can be an array or string for a single version.
-
-  When a matching semver request is made (jquery@1.9, jquery@1, bootstrap@3)
-  they will be converted to the latest version match contained here, if present.
-
-  Prereleases in this versions list are also allowed to satisfy ranges when present.
-*/
-
-function versions(loader) {
-  if (typeof indexOf == 'undefined')
-    indexOf = Array.prototype.indexOf;
-
-  // match x, x.y, x.y.z, x.y.z-prerelease.1
-  var semverRegEx = /^(\d+)(?:\.(\d+)(?:\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?)?)?$/;
-
-  var semverCompare = function(v1, v2) {
-    var v1Parts = v1.split('.');
-    var v2Parts = v2.split('.');
-    var prereleaseIndex;
-    if (v1Parts[2] && (prereleaseIndex = indexOf.call(v1Parts[2], '-')) != -1)
-      v1Parts.splice(2, 1, v1Parts[2].substr(0, prereleaseIndex), v1Parts[2].substr(prereleaseIndex + 1));
-    if (v2Parts[2] && (prereleaseIndex = indexOf.call(v2Parts[2], '-')) != -1)
-      v2Parts.splice(2, 1, v2Parts[2].substr(0, prereleaseIndex), v2Parts[2].substr(prereleaseIndex + 1));
-    for (var i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
-      if (!v1Parts[i])
-        return 1;
-      else if (!v2Parts[i])
-        return -1;
-      if (v1Parts[i] != v2Parts[i])
-        return parseInt(v1Parts[i]) > parseInt(v2Parts[i]) ? 1 : -1;
-    }
-    return 0;
-  }  
-  
-
-  loader.versions = loader.versions || {};
-
-  var loaderNormalize = loader.normalize;
-  loader.normalize = function(name, parentName, parentAddress) {
-    if (!loader.versions)
-      loader.versions = {};
-    var packageVersions = this.versions;
-
-    // strip the version before applying map config
-    var stripVersion, stripSubPathLength;
-    if (name.indexOf('@') > 0) {
-      var versionIndex = name.lastIndexOf('@');
-      var parts = name.substr(versionIndex + 1, name.length - versionIndex - 1).split('/');
-      stripVersion = parts[0];
-      stripSubPathLength = parts.length;
-      name = name.substr(0, versionIndex) + name.substr(versionIndex + stripVersion.length + 1, name.length - versionIndex - stripVersion.length - 1);
-    }
-
-    // run all other normalizers first
-    return Promise.resolve(loaderNormalize.call(this, name, parentName, parentAddress)).then(function(normalized) {
-      
-      var version, semverMatch, nextChar, versions;
-      var index = normalized.indexOf('@');
-
-      // if we stripped a version, and it still has no version, add it back
-      if (stripVersion && (index == -1 || index == 0)) {
-        var parts = normalized.split('/');
-        parts[parts.length - stripSubPathLength] += '@' + stripVersion;
-        normalized = parts.join('/');
-        index = normalized.indexOf('@');
-      }
-
-      // see if this module corresponds to a package already in our versioned packages list
-      
-      // no version specified - check against the list (given we don't know the package name)
-      if (index == -1 || index == 0) {
-        for (var p in packageVersions) {
-          versions = packageVersions[p];
-          if (normalized.substr(0, p.length) != p)
-            continue;
-
-          nextChar = normalized.substr(p.length, 1);
-
-          if (nextChar && nextChar != '/')
-            continue;
-
-          // match -> take latest version
-          return p + '@' + (typeof versions == 'string' ? versions : versions[versions.length - 1]) + normalized.substr(p.length);
-        }
-        return normalized;
-      }
-
-      // get the version info
-      version = normalized.substr(index + 1).split('/')[0];
-      var versionLength = version.length;
-
-      var minVersion;
-      if (version.substr(0, 1) == '^') {
-        version = version.substr(1);
-        minVersion = true;
-      }
-
-      semverMatch = version.match(semverRegEx);
-
-      // if not a semver, we cant help
-      if (!semverMatch)
-        return normalized;
-
-      // translate '^' in range to simpler range form
-      if (minVersion) {
-        // ^0 -> 0
-        // ^1 -> 1
-        if (!semverMatch[2])
-          minVersion = false;
-        
-        if (!semverMatch[3]) {
-          
-          // ^1.1 -> ^1.1.0
-          if (semverMatch[2] > 0)
-            semverMatch[3] = '0';
-
-          // ^0.1 -> 0.1
-          // ^0.0 -> 0.0
-          else
-            minVersion = false;
-        }
-      }
-
-      if (minVersion) {
-        // >= 1.0.0
-        if (semverMatch[1] > 0) {
-          if (!semverMatch[2])
-            version = semverMatch[1] + '.0.0';
-          if (!semverMatch[3])
-            version = semverMatch[1] + '.0';
-          minVersion = version;
-          semverMatch = [semverMatch[1]];
-        }
-        // >= 0.1.0
-        else if (semverMatch[2] > 0) {
-          minVersion = version;
-          semverMatch = [0, semverMatch[2]];
-        }
-        // >= 0.0.0
-        else {
-          // NB compatible with prerelease is just prelease itself?
-          minVersion = false;
-          semverMatch = [0, 0, semverMatch[3]];
-        }
-        version = semverMatch.join('.');
-      }
-
-      var packageName = normalized.substr(0, index);
-
-      versions = packageVersions[packageName] || [];
-
-      if (typeof versions == 'string')
-        versions = [versions];
-
-      // look for a version match
-      // if an exact semver, theres nothing to match, just record it
-      if (!semverMatch[3] || minVersion)
-        for (var i = versions.length - 1; i >= 0; i--) {
-          var curVersion = versions[i];
-          // if I have requested x.y, find an x.y.z-b
-          // if I have requested x, find any x.y / x.y.z-b
-          if (curVersion.substr(0, version.length) == version && curVersion.substr(version.length, 1).match(/^[\.\-]?$/)) {
-            // if a minimum version, then check too
-            if (!minVersion || minVersion && semverCompare(curVersion, minVersion) != -1)
-              return packageName + '@' + curVersion + normalized.substr(packageName.length + versionLength + 1);
-          }
-        }
-
-      // no match
-      // record the package and semver for reuse since we're now asking the server
-      // x.y and x versions will now be latest by default, so they are useful in the version list
-      if (indexOf.call(versions, version) == -1) {
-        versions.push(version);
-        versions.sort(semverCompare);
-
-        normalized = packageName + '@' + version + normalized.substr(packageName.length + versionLength + 1);
-
-        // if this is an x.y.z, remove any x.y, x
-        // if this is an x.y, remove any x
-        if (semverMatch[3] && (index = indexOf.call(versions, semverMatch[1] + '.' + semverMatch[2])) != -1)
-          versions.splice(index, 1);
-        if (semverMatch[2] && (index = indexOf.call(versions, semverMatch[1])) != -1)
-          versions.splice(index, 1);
-
-        packageVersions[packageName] = versions.length == 1 ? versions[0] : versions;
-      }
-
-      return normalized;
-    });
-  }
-}
-/*
  * Dependency Tree Cache
  * 
  * Allows a build to pre-populate a dependency trace tree on the loader of 
@@ -1944,8 +1877,8 @@ global(System);
 cjs(System);
 amd(System);
 map(System);
+plugins(System);
 bundles(System);
-versions(System);
 depCache(System);
   if (!System.paths['@traceur'])
     System.paths['@traceur'] = $__curScript && $__curScript.getAttribute('data-traceur-src')
@@ -1954,7 +1887,10 @@ depCache(System);
         : System.baseURL + (System.baseURL.lastIndexOf('/') == System.baseURL.length - 1 ? '' : '/')
         ) + 'traceur.js';
 
-  return System;
+  if (!System.paths['@traceur-runtime'])
+    System.paths['@traceur-runtime'] = $__curScript && $__curScript.getAttribute('data-traceur-runtime-src') || System.paths['@traceur'].replace(/\.js$/, '-runtime.js');
+
+   return System;
 };
 
 var $__curScript, __eval;
@@ -1970,7 +1906,12 @@ var $__curScript, __eval;
       doEval(source);
     }
     catch(e) {
-      throw 'Error evaluating ' + address;
+      var msg = 'Error evaluating ' + address + '\n';
+      if (e instanceof Error)
+        e.message = msg + e.message;
+      else
+        e = msg + e;
+      throw e;
     }
   };
 
@@ -2042,7 +1983,7 @@ var $__curScript, __eval;
     if (!$__global.System || !$__global.LoaderPolyfill) {
       var basePath = '';
       try {
-        throw new Error('Getting the path');
+        throw new TypeError('Unable to get Worker base path.');
       } catch(err) {
         var idx = err.stack.indexOf('at ') + 3;
         var withSystem = err.stack.substr(idx, err.stack.substr(idx).indexOf('\n'));

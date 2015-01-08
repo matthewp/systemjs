@@ -1,6 +1,6 @@
 "format global";
 
-(function() {
+(function(global) {
 
 QUnit.config.testTimeout = 2000;
 
@@ -22,8 +22,18 @@ function err(e) {
 
 var ie8 = typeof navigator != 'undefined' && navigator.appVersion && navigator.appVersion.indexOf('MSIE 8') != -1;
 
+System.traceurOptions.asyncFunctions = true;
+
 asyncTest('Error handling', function() {
-  System['import']('tests/error').then(err, function(e) {
+  System['import']('tests/error-loader').then(err, function(e) {
+    ok(true);
+    start();
+  });
+});
+
+asyncTest('Error handling2', function() {
+  System['import']('tests/error-loader2').then(err, function(e) {
+    console.error(e);
     ok(true);
     start();
   });
@@ -216,6 +226,13 @@ asyncTest('AMD detection test with comments', function() {
   }, err);
 });
 
+asyncTest('AMD detection test with byte order mark (BOM)', function() {
+  System['import']('tests/amd-module-bom').then(function(m) {
+    ok(m.amd);
+    start();
+  }, err);
+});
+
 System.bundles['tests/amd-bundle'] = ['bundle-1', 'bundle-2'];
 asyncTest('Loading an AMD bundle', function() {
   System['import']('bundle-1').then(function(m) {
@@ -266,7 +283,37 @@ asyncTest('Loading a CommonJS module with this', function() {
 
 asyncTest('CommonJS setting module.exports', function() {
   System['import']('tests/cjs-exports').then(function(m) {
-    ok(m.e = 'export');
+    ok(m.e == 'export');
+    start();
+  }, err);
+});
+
+asyncTest('CommonJS detection variation', function() {
+  System['import']('tests/commonjs-variation').then(function(m) {
+    ok(m.e === System.get('@empty'));
+    start();
+  }, err);
+});
+
+asyncTest('CommonJS detection test with byte order mark (BOM)', function() {
+  System['import']('tests/cjs-exports-bom').then(function(m) {
+    ok(m.foo == 'bar');
+    start();
+  }, err);
+});
+
+asyncTest('CommonJS module detection test with byte order mark (BOM)', function() {
+  System['import']('tests/cjs-module-bom').then(function(m) {
+    ok(m.foo == 'bar');
+    start();
+  }, err);
+});
+
+asyncTest('CommonJS require variations', function() {
+  System['import']('tests/commonjs-requires').then(function(m) {
+    ok(m.d1 == 'd');
+    ok(m.d2 == 'd');
+    ok(m.d3 == "require('not a dep')");
     start();
   }, err);
 });
@@ -300,6 +347,13 @@ asyncTest('Versions support', function() {
   }, err);
 });
 
+asyncTest('Versions 2', function() {
+  System['import']('tests/zero@0').then(function(m) {
+    ok(m == '0');
+    start()
+  }, err);
+})
+
 asyncTest('Version with map', function() {
   System.versions['tests/mvd'] = '2.0.0';
   System.map['tests/map-version'] = {
@@ -319,6 +373,15 @@ asyncTest('Simple compiler Plugin', function() {
     start();
   }, err);
 });
+
+asyncTest('Versioned plugin', function() {
+  System.versions['tests/versioned-plugin-test'] = '1.2.3';
+  System['import']('tests/versioned-plugin-test/main').then(function(m) {
+    ok(m.output == 'plugin output');
+    ok(m.versionedPlugin == true);
+    start();
+  }, err);
+})
 
 asyncTest('Mapping to a plugin', function() {
   System.map['pluginrequest'] = 'tests/compiled.coffee!';
@@ -435,9 +498,30 @@ asyncTest('AMD simplified CommonJS wrapping with an aliased require', function()
 if (ie8)
   return;
 
+asyncTest('Async functions', function() {
+  System['import']('tests/async').then(function(m) {
+    ok(true);
+    start();
+  });
+});
+
 asyncTest('Wrapper module support', function() {
   System['import']('tests/wrapper').then(function(m) {
     ok(m['default'] == 'default1', 'Wrapper module not defined.');
+    start();
+  }, err);
+});
+
+asyncTest('ES6 plugin', function() {
+  System['import']('tests/blah!tests/es6-plugin').then(function(m) {
+    ok(m == 'plugin');
+    start();
+  }, err);
+});
+
+asyncTest('ES6 detection', function() {
+  System['import']('tests/es6-detection1').then(function(m) {
+    ok(true);
     start();
   }, err);
 });
@@ -486,6 +570,14 @@ asyncTest('Basic exporting & importing', function() {
   })['catch'](err);
 });
 
+asyncTest('Export Star', function(assert) {
+  System['import']('tests/export-star').then(function(m) {
+    ok(m.foo == 'foo');
+    ok(m.bar == 'bar');
+    start();
+  }, err);
+});
+
 asyncTest('Importing a mapped loaded module', function() {
   System.map['default1'] = 'tests/default1';
   System['import']('default1').then(function(m) {
@@ -495,6 +587,13 @@ asyncTest('Importing a mapped loaded module', function() {
     }, err);
   }, err);
 });
+
+asyncTest('Loading empty ES6', function() {
+  System['import']('tests/empty-es6').then(function(m) {
+    ok(m && emptyES6);
+    start();
+  }, err);
+})
 
 asyncTest('Loading ES6 with format hint', function() {
   System['import']('tests/es6-format').then(function(m) {
@@ -539,7 +638,7 @@ asyncTest('Relative dyanamic loading', function() {
 asyncTest('ES6 Circular', function() {
   System['import']('tests/es6-circular1').then(function(m) {
     ok(m.q == 3, 'Binding not allocated');
-    ok(m.r == 5, 'Binding not updated');
+    ok(m.r == 3, 'Binding not updated');
     start();
   }, err);
 });
@@ -648,6 +747,23 @@ asyncTest('AMD simplified CommonJS wrapping with an aliased require', function()
   }, err);
 });
 
+asyncTest('Metadata dependencies work for named defines', function() {
+  System['import']('tests/meta-deps').then(function(m) {
+    return System['import']('b');
+  }).then(function(m) {
+    ok(m.a === 'a');
+    start();
+  });
+});
+
+asyncTest('Loading an AMD module that requires another works', function() {
+  expect(0);
+  System['import']('tests/amd-require').then(function(){
+    // Just getting this far means it is working.
+    start();
+  });
+});
+
 if(typeof window !== 'undefined' && window.Worker) {
   asyncTest('Using SystemJS in a Web Worker', function() {
     var worker = new Worker('tests/worker.js');
@@ -659,4 +775,4 @@ if(typeof window !== 'undefined' && window.Worker) {
   });
 }
 
-})();
+})(typeof window == 'undefined' ? global : window);
