@@ -71,6 +71,8 @@ $__global.upgradeSystemLoader = function() {
     $__global.System = System.originalSystem;
   }
 
+  System._extensions = [];
+
   
 /*
  * Meta Extension
@@ -737,8 +739,8 @@ function register(loader) {
  * Code should be vaguely readable
  * 
  */
+var originalSystem = $__global.System.originalSystem;
 function core(loader) {
-
   /*
     __useDefault
     
@@ -884,6 +886,28 @@ function core(loader) {
     }
     return loaderInstantiate.call(loader, load);
   }
+
+  function applyExtensions(extensions, loader) {
+    loader._extensions = [];
+    var ext;
+    for(var i = 0, len = extensions.length; i < len; i++) {
+      ext = extensions[i];
+      ext(loader);
+      loader._extensions.push(ext);
+    }
+  }
+
+  loader.clone = function() {
+    var originalLoader = this;
+    var loader = new LoaderPolyfill(originalSystem);
+    loader.baseURL = originalLoader.baseURL;
+    loader.paths = { '*': '*.js' };
+    loader.originalLoader = originalLoader;
+    applyExtensions(originalLoader._extensions, loader);
+    addTraceurPaths(loader);
+    return loader;
+  }
+
 }
 /*
   SystemJS Global Format
@@ -2133,14 +2157,29 @@ plugins(System);
 bundles(System);
 versions(System);
 depCache(System);
-  if (!System.paths['@traceur'])
-    System.paths['@traceur'] = $__curScript && $__curScript.getAttribute('data-traceur-src')
+System._extensions.push(meta);
+System._extensions.push(register);
+System._extensions.push(core);
+System._extensions.push(global);
+System._extensions.push(cjs);
+System._extensions.push(amd);
+System._extensions.push(map);
+System._extensions.push(plugins);
+System._extensions.push(bundles);
+System._extensions.push(versions);
+System._extensions.push(depCache);
+
+  function addTraceurPaths(loader) {
+  if (!loader.paths['@traceur'])
+    loader.paths['@traceur'] = $__curScript && $__curScript.getAttribute('data-traceur-src')
       || ($__curScript && $__curScript.src 
         ? $__curScript.src.substr(0, $__curScript.src.lastIndexOf('/') + 1) 
-        : System.baseURL + (System.baseURL.lastIndexOf('/') == System.baseURL.length - 1 ? '' : '/')
+        : loader.baseURL + (loader.baseURL.lastIndexOf('/') == loader.baseURL.length - 1 ? '' : '/')
         ) + 'traceur.js';
-  if (!System.paths['@traceur-runtime'])
-    System.paths['@traceur-runtime'] = $__curScript && $__curScript.getAttribute('data-traceur-runtime-src') || System.paths['@traceur'].replace(/\.js$/, '-runtime.js');
+  if (!loader.paths['@traceur-runtime'])
+    loader.paths['@traceur-runtime'] = $__curScript && $__curScript.getAttribute('data-traceur-runtime-src') || loader.paths['@traceur'].replace(/\.js$/, '-runtime.js');
+  }
+  addTraceurPaths(System);
 };
 
 var $__curScript, __eval;
