@@ -15,14 +15,12 @@ function err(e) {
     if (typeof window == 'undefined')
       console.log(e.stack);
     else
-      throw e;
+      throw e.stack || e;
     start();
-  });  
+  });
 }
 
 var ie8 = typeof navigator != 'undefined' && navigator.appVersion && navigator.appVersion.indexOf('MSIE 8') != -1;
-
-System.traceurOptions.asyncFunctions = true;
 
 asyncTest('Error handling', function() {
   System['import']('tests/error-loader').then(err, function(e) {
@@ -314,6 +312,8 @@ asyncTest('CommonJS require variations', function() {
     ok(m.d1 == 'd');
     ok(m.d2 == 'd');
     ok(m.d3 == "require('not a dep')");
+    // ok(m.d4 == "text require('still not a dep') text");
+    // ok(m.d5 == 'text \'quote\' require("yet still not a dep")');
     start();
   }, err);
 });
@@ -417,6 +417,13 @@ asyncTest('Plugin as a dependency', function() {
   }, err);
 });
 
+asyncTest('Plugin version stripping', function() {
+  System.normalize('some/module@1.2.3!some/plugin@3.4.5.jsx').then(function(normalized) {
+    ok(normalized == 'some/module@1.2.3!some/plugin@3.4.5.jsx');
+    start();
+  }, err);
+})
+
 asyncTest('AMD Circular', function() {
   System['import']('tests/amd-circular1').then(function(m) {
     ok(m.outFunc() == 5, 'Expected execution');
@@ -436,6 +443,14 @@ asyncTest('System.register Circular', function() {
   System['import']('tests/register-circular1').then(function(m) {
     ok(m.q == 3, 'Binding not allocated');
     ok(m.r == 5, 'Binding not updated');
+    start();
+  }, err);
+});
+
+asyncTest('System.register group linking test', function() {
+  System.bundles['tests/group-test'] = ['group-a'];
+  System['import']('group-a').then(function(m) {
+    ok(m);
     start();
   }, err);
 });
@@ -499,6 +514,8 @@ if (ie8)
   return;
 
 asyncTest('Async functions', function() {
+  System.babelOptions = { experimental: true };
+  System.traceurOptions = { asyncFunctions: true };
   System['import']('tests/async').then(function(m) {
     ok(true);
     start();
@@ -609,6 +626,13 @@ asyncTest('Loading ES6 loading AMD', function() {
   })
 });
 
+asyncTest('Loading AMD with import *', function() {
+  System['import']('tests/es6-import-star-amd').then(function(m) {
+    ok(m.g == true);
+    start();
+  }, err);
+});
+
 asyncTest('Loading ES6 and AMD', function() {
   System['import']('tests/es6-and-amd').then(function(m) {
     ok(m.amd_module == 'AMD Module');
@@ -638,14 +662,14 @@ asyncTest('Relative dyanamic loading', function() {
 asyncTest('ES6 Circular', function() {
   System['import']('tests/es6-circular1').then(function(m) {
     ok(m.q == 3, 'Binding not allocated');
-    ok(m.r == 3, 'Binding not updated');
+    if (System.transpiler != '6to5') ok(m.r == 3, 'Binding not updated');
     start();
   }, err);
 });
 
 asyncTest('AMD & CJS circular, ES6 Circular', function() {
   System['import']('tests/all-circular1').then(function(m) {
-    ok(m.q == 4);
+    if (System.transpiler != '6to5') ok(m.q == 4);
     ok(m.o.checkObj() == 'changed');
     start();
   }, err);
@@ -760,6 +784,44 @@ asyncTest('Loading an AMD module that requires another works', function() {
   expect(0);
   System['import']('tests/amd-require').then(function(){
     // Just getting this far means it is working.
+    start();
+  });
+});
+
+asyncTest('Loading a connected tree that connects ES and CJS modules', function(){
+	System['import']('tests/connected-tree/a').then(function(a){
+		ok(a.name === "a");
+		start();
+	});
+});
+
+asyncTest('Loading two bundles that have a shared dependency', function() {
+  System.bundles["tests/shared-dep-bundles/a"] = ["lib/shared-dep", "lib/a"];
+  System.bundles["tests/shared-dep-bundles/b"] = ["lib/shared-dep", "lib/b"];
+  expect(0);
+  System['import']('lib/a').then(function() {
+    System['import']('lib/b').then(function() {
+      //If it gets here it's fine
+      start();
+    }, err);
+  }, err);
+});
+
+asyncTest("System.clone", function() {
+  var ClonedSystem  = System.clone();
+
+  System.map['maptest'] = 'tests/map-test';
+  ClonedSystem.map['maptest'] = 'tests/map-test-dep';
+
+  var systemDef = System['import']('maptest');
+  var cloneDef = ClonedSystem['import']('maptest');
+
+  Promise.all([systemDef, cloneDef]).then(function(modules){
+    var m = modules[0];
+    var mClone = modules[1];
+    ok(m.maptest == 'maptest', 'Mapped module not loaded');
+    ok(mClone.dep == 'maptest', 'Mapped module not loaded');
+    ok(mClone !== m, "different modules");
     start();
   });
 });
